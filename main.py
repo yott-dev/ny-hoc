@@ -8,7 +8,6 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_chroma import Chroma
-from openai.types import vector_store
 
 llm = init_chat_model("gpt-4o-mini")
 file_path = "ressources/steuergesetz.pdf"
@@ -42,7 +41,7 @@ def load_documents_into_vector_store(vector_store: Chroma, chunks: list[Document
     vector_store.add_documents(documents=chunks)
 
 
-def ask_chatbot(query, vector_store: Chroma):
+def ask_chatbot(query: str, vector_store: Chroma):
     # implement retriever
     retriever = vector_store.as_retriever(
         search_type="similarity",
@@ -66,18 +65,25 @@ def ask_chatbot(query, vector_store: Chroma):
     answer = rag_chain.invoke(question)
     print(f"KI-Antwort:\n{answer}")
 
-
 def main():
     #load ressources
     docs = load_documents()
     #generate chunks from document
     split_documents(docs)
-    #create vector store with embedding model
+    #create vector_store with embedding model
     vector_store = create_vector_store_with_embeddings()
     #load chunks into vector_store
     load_documents_into_vector_store(vector_store, docs)
-    #used for chain in prompt
-    ask_chatbot("Lottogewinn versteuern?", vector_store)
+    #ask chatbot a question
+    y = True
+    while y:
+        print("-------- Ask me anything ---------")
+        query = input()
+        if query == "exit" or "q":
+            print("Thank you and goodbye!")
+            y = False
+        else:
+            ask_chatbot(query, vector_store)
 
 
 if __name__ == "__main__":
