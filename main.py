@@ -2,7 +2,6 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document #
 from langchain_openai import OpenAIEmbeddings
-#from langchain_core.vectorstores import InMemoryVectorStore (old)
 from langchain.chat_models import init_chat_model
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -12,7 +11,7 @@ from langchain_chroma import Chroma
 llm = init_chat_model("gpt-4o-mini")
 file_path = "ressources/steuergesetz.pdf"
 
-def load_documents():
+def load_documents(file_path):
     #load page
     loader: PyPDFLoader = PyPDFLoader(file_path, mode="page")
     docs: list[Document] = loader.load() #page_content, metadata
@@ -35,13 +34,23 @@ def create_vector_store_with_embeddings():
     vector_store: Chroma = Chroma(
             collection_name="example_collection",
             embedding_function=embeddings,
-            persist_directory="./chroma_langchain_db"
+            persist_directory="./chroma_langchain_db",
+            #sinus space
+            collection_metadata = {"hnsw:space": "cosine"}
         )
     return vector_store
 
+def make_ids(chunks: list[Document]) -> list[str]:
+    return [f"{c.metadata.get('source', 'unknown')}_{i}" for i, c in enumerate(chunks)]
+
 def load_documents_into_vector_store(vector_store: Chroma, chunks: list[Document]):
-    #load chunks into vector store, chunks gets automatically embedded
-    vector_store.add_documents(documents=chunks)
+    ids = make_ids(chunks)
+    if vector_store.get(ids[:1])["ids"]:
+        print("Already in store")
+    else:
+        # load chunks with ids into vector store, chunks gets automatically embedded
+        vector_store.add_documents(documents=chunks, ids=ids)
+        print(f"{len(ids)} new chunks added to store")
 
 
 def ask_chatbot(query: str, vector_store: Chroma):
@@ -50,11 +59,16 @@ def ask_chatbot(query: str, vector_store: Chroma):
         search_type="similarity",
         search_kwargs={"k": 5},
     )
+    #search
+    results_with_scores = vector_store.similarity_search_with_score(query, k=5)
+    query_score = results_with_scores[0][-1]
+    #search vector store
     retrieve_data = retriever.invoke(query)
+    #save metadata from received chunk for output
     metadata = retrieve_data[0].metadata
     # Prompt / chain begins
     template = """Du bist ein Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
-    um die Frage zu beantworten. Wenn die Antwort nicht im Kontext steht, sag: "Dazu habe ich keine Info".
+    um die Frage zu beantworten. Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...".
     Kontext:
     {context}
     Frage: {question}
@@ -68,22 +82,12 @@ def ask_chatbot(query: str, vector_store: Chroma):
     )
     question = query
     answer = rag_chain.invoke(question)
-    print(f"KI-Antwort:\n{answer}\n Found in {metadata.get('source', 'n/a')} on page {metadata.get('page', 'n/a')}")
+    print(f"KI-Antwort:\n{answer}\n {query_score:.2f} | {metadata.get('source', 'n/a')} | page {metadata.get('page', 'n/a')}")
 
-def main():
-    #load ressources
-    docs = load_documents()
-    #generate chunks from document
-    split_documents(docs)
-    #create vector_store with embedding model
-    vector_store = create_vector_store_with_embeddings()
-    #load chunks into vector_store
-    load_documents_into_vector_store(vector_store, docs)
-    #ask chatbot a question
+def start_bot(vector_store: Chroma):
     loop = True
     while loop:
         print("-------- Ask me anything ---------")
-        print("question:")
         query = input()
         if query in ["exit", "quit"]:
             print("Thank you and goodbye!")
@@ -91,6 +95,20 @@ def main():
         else:
             ask_chatbot(query, vector_store)
 
+def main():
+    #load ressources
+    docs = load_documents(file_path)
+    #generate chunks from document
+    split_documents(docs)
+    #create vector_store with embedding model
+    vector_store = create_vector_store_with_embeddings()
+    #load chunks into vector_store
+    load_documents_into_vector_store(vector_store, docs)
+    #start the chatbot
+    start_bot(vector_store)
+
+
 
 if __name__ == "__main__":
     main()
+#add info about store (amound of embeddings, ids etc.) -> good to konw
