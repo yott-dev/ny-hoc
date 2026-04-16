@@ -16,6 +16,8 @@ def load_documents():
     #load page
     loader: PyPDFLoader = PyPDFLoader(file_path, mode="page")
     docs: list[Document] = loader.load() #page_content, metadata
+    #metadata = docs[0].metadata
+    #print(metadata)
     return docs
 
 def split_documents(docs: list[Document]):
@@ -23,6 +25,7 @@ def split_documents(docs: list[Document]):
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=250)
     #split text into chunks
     chunks = text_splitter.split_documents(docs)
+    #print(chunks) test
     return chunks
 
 def create_vector_store_with_embeddings():
@@ -47,6 +50,8 @@ def ask_chatbot(query: str, vector_store: Chroma):
         search_type="similarity",
         search_kwargs={"k": 5},
     )
+    retrieve_data = retriever.invoke(query)
+    metadata = retrieve_data[0].metadata
     # Prompt / chain begins
     template = """Du bist ein Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
     um die Frage zu beantworten. Wenn die Antwort nicht im Kontext steht, sag: "Dazu habe ich keine Info".
@@ -63,7 +68,7 @@ def ask_chatbot(query: str, vector_store: Chroma):
     )
     question = query
     answer = rag_chain.invoke(question)
-    print(f"KI-Antwort:\n{answer}")
+    print(f"KI-Antwort:\n{answer}\n Found in {metadata.get('source', 'n/a')} on page {metadata.get('page', 'n/a')}")
 
 def main():
     #load ressources
@@ -75,13 +80,14 @@ def main():
     #load chunks into vector_store
     load_documents_into_vector_store(vector_store, docs)
     #ask chatbot a question
-    y = True
-    while y:
+    loop = True
+    while loop:
         print("-------- Ask me anything ---------")
+        print("question:")
         query = input()
-        if query == "exit" or "q":
+        if query in ["exit", "quit"]:
             print("Thank you and goodbye!")
-            y = False
+            loop = False
         else:
             ask_chatbot(query, vector_store)
 
