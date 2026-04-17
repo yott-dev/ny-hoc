@@ -8,20 +8,27 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_chroma import Chroma
 
-llm = init_chat_model("gpt-4o-mini")
+llm = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
+    #Antwort auf 200 tokens beschränken
+    max_tokens=200
+)
 file_path = "ressources/steuergesetz.pdf"
 
 def load_documents(file_path):
-    #load page
+    #load PDFs
     loader: PyPDFLoader = PyPDFLoader(file_path, mode="page")
     docs: list[Document] = loader.load() #page_content, metadata
-    #metadata = docs[0].metadata
-    #print(metadata)
     return docs
 
 def split_documents(docs: list[Document]):
     #create text splitter
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=250)
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=750,
+        chunk_overlap=150,
+        separators=["\n\n", "\n", ".", " "] #Sätze werden bestmöglich bei Zeilenumbrüchen abgeschnitten und nicht mitten im Satz
+    )
     #split text into chunks
     chunks = text_splitter.split_documents(docs)
     #print(chunks) test
