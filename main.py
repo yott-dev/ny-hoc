@@ -1,12 +1,15 @@
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document #
+from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain.chat_models import init_chat_model
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_chroma import Chroma
+
+#----RAGAS-----
+from evals.ragas_eval import run_evaluation
 
 llm = init_chat_model(
     "gpt-4o",
@@ -42,7 +45,7 @@ def create_vector_store_with_embeddings():
             collection_name="example_collection",
             embedding_function=embeddings,
             persist_directory="./chroma_langchain_db",
-            #sinus space
+            #cosin space
             collection_metadata = {"hnsw:space": "cosine"}
         )
     return vector_store
@@ -53,12 +56,11 @@ def make_ids(chunks: list[Document]) -> list[str]:
 def load_documents_into_vector_store(vector_store: Chroma, chunks: list[Document]):
     ids = make_ids(chunks)
     if vector_store.get(ids[:1])["ids"]:
-        print("Already in store")
+        print("✅ Already in store")
     else:
         # load chunks with ids into vector store, chunks gets automatically embedded
         vector_store.add_documents(documents=chunks, ids=ids)
         print(f"{len(ids)} new chunks added to store")
-
 
 def ask_chatbot(query: str, vector_store: Chroma):
     # implement retriever
@@ -66,6 +68,7 @@ def ask_chatbot(query: str, vector_store: Chroma):
         search_type="similarity",
         search_kwargs={"k": 5},
     )
+
     #search
     results_with_scores = vector_store.similarity_search_with_score(query, k=5)
     query_score = results_with_scores[0][-1]
@@ -73,9 +76,12 @@ def ask_chatbot(query: str, vector_store: Chroma):
     retrieve_data = retriever.invoke(query)
     #save metadata from received chunk for output
     metadata = retrieve_data[0].metadata
+    # Contexts für RAGAS extrahieren
+    contexts = [doc.page_content for doc in retrieve_data]
     # Prompt / chain begins
+    #Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...
     template = """Du bist ein Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
-    um die Frage zu beantworten. Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...".
+    um die Frage zu beantworten".
     Kontext:
     {context}
     Frage: {question}
@@ -90,6 +96,7 @@ def ask_chatbot(query: str, vector_store: Chroma):
     question = query
     answer = rag_chain.invoke(question)
     print(f"KI-Antwort:\n{answer}\n {query_score:.2f} | {metadata.get('source', 'n/a')} | page {metadata.get('page', 'n/a')}")
+    return answer, contexts
 
 def start_bot(vector_store: Chroma):
     loop = True
@@ -111,11 +118,12 @@ def main():
     vector_store = create_vector_store_with_embeddings()
     #load chunks into vector_store
     load_documents_into_vector_store(vector_store, docs)
-    #start the chatbot
+    #run evaluation
+    run_evaluation(vector_store, ask_chatbot)
+    #start bot with retrieving information
     start_bot(vector_store)
-
 
 
 if __name__ == "__main__":
     main()
-#add info about store (amound of embeddings, ids etc.) -> good to konw
+#add info about store (amound of embeddings, ids etc.) -> good to konw logging
