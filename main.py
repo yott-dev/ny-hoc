@@ -9,10 +9,10 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.tools import tool
 from langchain_chroma import Chroma
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+#from langchain.agents import create_tool_calling_agent, AgentExecutor
 
 #----RAGAS-----
-from evals.ragas_eval import run_evaluation
+from evals.ragas_eval import run_evaluation, generate_testset
 
 #----Tools-----
 from tools import search_steuerbuch
@@ -21,7 +21,9 @@ from tools import search_steuerbuch
 llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
-    max_tokens=200
+    #Antwort auf 200 tokens beschränken
+    max_tokens=200,
+    temperature=0
 )
 
 # ---> Noah: Für den Agent (mehr Tokens für Reasoning + Tool-Calls)
@@ -60,7 +62,7 @@ def create_vector_store_with_embeddings():
             #cosin space
             collection_metadata = {"hnsw:space": "cosine"}
         )
-    return vector_store
+    return vector_store, embeddings
 
 def make_ids(chunks: list[Document]) -> list[str]:
     return [f"{c.metadata.get('source', 'unknown')}_{i}" for i, c in enumerate(chunks)]
@@ -127,14 +129,15 @@ def main():
     #generate chunks from document
     split_documents(docs)
     #create vector_store with embedding model
-    vector_store = create_vector_store_with_embeddings()
+    vector_store, embeddings = create_vector_store_with_embeddings()
     #load chunks into vector_store
     load_documents_into_vector_store(vector_store, docs)
+    #generate testset
+    generate_testset(docs, llm, embeddings, testset_size=10)
     #run evaluation
-    run_evaluation(vector_store, ask_chatbot)
+    #run_evaluation(vector_store, ask_chatbot)
     #start bot with retrieving information
     start_bot(vector_store)
-
 
 if __name__ == "__main__":
     main()

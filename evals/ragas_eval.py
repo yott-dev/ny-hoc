@@ -9,32 +9,37 @@ from ragas.llms import llm_factory
 from openai import AsyncOpenAI
 from ragas.embeddings.base import embedding_factory
 
-def generate_testset(docs: list[Document], ragas_llm, ragas_embeddings, testset_size: int = 10, force_regenerate: bool = False):
+
+def generate_testset(docs, ragas_llm, ragas_embeddings, testset_size=10):
     csv_path = "evals/datasets/data.csv"
 
-    if os.path.exists(csv_path) and not force_regenerate:
+    if os.path.exists(csv_path):
         print("✅ Testset bereits vorhanden, wird geladen...")
         return pd.read_csv(csv_path)
 
+    print("🔄 Generiere neues Testset...")
+
     generator = TestsetGenerator(
         llm=ragas_llm,
-        embedding_model=ragas_embeddings,
-        language="german"
+        embedding_model=ragas_embeddings
     )
 
-    testset = generator.generate_with_langchain_docs(docs, testset_size=testset_size)
+    testset = generator.generate_with_langchain_docs(
+        docs,
+        testset_size=testset_size,
+    )
 
     df = testset.to_pandas()
     df.to_csv(csv_path, index=False)
     print("✅ Testset gespeichert")
 
-    return df  # immer df zurückgeben, beide Pfade konsistent
+    return df
 
 def load_dataset():
     dataset = Dataset.load(
         name="data",
         backend="local/csv",
-        root_dir="./evals"
+        root_dir="./evals/datasets"
     )
     return dataset
 
@@ -66,10 +71,8 @@ def run_evaluation(vector_store, chatbot_fn):
             answer_accuracy.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
             faithfulness.ascore(user_input=row["user_input"], response=answer, retrieved_contexts=contexts),
             answer_relevancy.ascore(user_input=row["user_input"], response=answer),
-            context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
-                                     reference=row["reference"]),
-            context_recall.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
-                                  reference=row["reference"]),
+            context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
+            context_recall.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
         )
 
         return {
