@@ -5,7 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "beautifulsoup4>=4.14.3",
     "bs4>=0.0.2",
+    "html2text>=2025.4.15",
     "langchain>=1.2.15",
     "langchain-chroma>=1.1.0",
     "langchain-community>=0.4.1",
@@ -14,4 +16,5 @@ dependencies = [
     "langchain-text-splitters>=1.1.1",
     "pypdf>=6.10.0",
     "ragas>=0.4.3",
+    "requests>=2.33.1",
 ]

@@ -5,17 +5,29 @@ from langchain_openai import OpenAIEmbeddings
 from langchain.chat_models import init_chat_model
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.tools import tool
 from langchain_chroma import Chroma
+from langchain.agents import create_tool_calling_agent, AgentExecutor
 
 #----RAGAS-----
 from evals.ragas_eval import run_evaluation
 
+#----Tools-----
+from tools import search_steuerbuch
+
+# Für einfache RAG-Abfragen (Evaluation)
 llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
-    #Antwort auf 200 tokens beschränken
     max_tokens=200
+)
+
+# ---> Noah: Für den Agent (mehr Tokens für Reasoning + Tool-Calls)
+agent_llm = init_chat_model(
+    "gpt-4o",
+    model_provider="openai",
 )
 file_path = "ressources/steuergesetz.pdf"
 
