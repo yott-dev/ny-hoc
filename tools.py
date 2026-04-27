@@ -2,6 +2,9 @@ import requests
 import html2text
 from bs4 import BeautifulSoup
 from langchain_core.tools import tool
+from langchain_chroma import Chroma
+from langchain_core.tools import tool
+
 
 # ── Konstanten
 BASE_URL = "https://www.zh.ch"
@@ -116,6 +119,29 @@ def search_steuerbuch(query: str) -> str:
         f"{total_results} Treffer gefunden, {len(collected)} Einträge geladen.\n\n"
     )
     return header + "\n\n---\n\n".join(collected)
+
+
+def create_local_search_tool(vector_store: Chroma):
+    # Factory: Erstellt das RAG-Tool mit dem vector_store als Closure.
+    # So bleibt alle Tool-Logik in tools.py, main.py liefert nur den vector_store.
+    @tool
+    def search_local_documents(query: str) -> str:
+        """Durchsucht die lokale Datenbank mit Schweizer Steuergesetzen und ESTV-Kreisschreiben.
+        Verwende dieses Tool zuerst, bevor du das Online-Steuerbuch durchsuchst."""
+        results = vector_store.similarity_search(query, k=5)
+        if not results:
+            return "Keine relevanten Dokumente in der lokalen Datenbank gefunden."
+        # Jeden Treffer mit Quellenangabe formatieren damit das LLM die Herkunft kennt
+        parts = []
+        for doc in results:
+            meta = doc.metadata
+            parts.append(
+                f"[Quelle: {meta.get('source', '?')}, Seite {meta.get('page', '?')}]\n"
+                f"{doc.page_content}"
+            )
+        return "\n\n".join(parts)
+
+    return search_local_documents
 
 
 # Lokaler Test 

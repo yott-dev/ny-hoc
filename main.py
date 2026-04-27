@@ -7,15 +7,15 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.tools import tool
 from langchain_chroma import Chroma
-#from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents import create_agent as lc_create_agent
+
 
 #----RAGAS-----
 from evals.ragas_eval import run_evaluation, generate_testset
 
 #----Tools-----
-from tools import search_steuerbuch
+from tools import search_steuerbuch, create_local_search_tool
 
 # Für einfache RAG-Abfragen (Evaluation)
 llm = init_chat_model(
@@ -94,7 +94,7 @@ def ask_chatbot(query: str, vector_store: Chroma):
     contexts = [doc.page_content for doc in retrieve_data]
     # Prompt / chain begins
     #Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...
-    template = """Du bist ein Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
+    template = """Du bist ein hilfsbereiter Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
     um die Frage zu beantworten".
     Kontext:
     {context}
@@ -112,16 +112,52 @@ def ask_chatbot(query: str, vector_store: Chroma):
     print(f"KI-Antwort:\n{answer}\n {query_score:.2f} | {metadata.get('source', 'n/a')} | page {metadata.get('page', 'n/a')}")
     return answer, contexts
 
+def create_agent(vector_store: Chroma):
+    # Alle Tools die der Agent zur Verfügung hat
+    tools = [
+        create_local_search_tool(vector_store),     # Tool 1: lokale PDFs (Factory aufrufen)
+        search_steuerbuch,                          # Tool 2: zh.ch Steuerbuch online
+    ]
+
+    # System-Prompt jetzt als einfacher String, kein ChatPromptTemplate nötig
+    system_prompt = (
+        "Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht. "
+        "Beantworte alle Fragen auf Deutsch.\n\n"
+        "Dir stehen zwei Tools zur Verfügung:\n"
+        "- search_local_documents: Lokale PDFs (Steuergesetze, ESTV-Kreisschreiben) — zuerst nutzen\n"
+        "- search_steuerbuch: Zürcher Steuerbuch online (zh.ch) — nutzen wenn lokale Docs nicht reichen\n\n"
+        "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
+    )
+
+    # lc_create_agent baut den kompletten Agent-Loop intern auf
+    return lc_create_agent(agent_llm, tools, system_prompt=system_prompt)
+
+
 def start_bot(vector_store: Chroma):
-    loop = True
-    while loop:
+    agent = create_agent(vector_store)
+    chat_history = []
+
+    while True:
         print("-------- Ask me anything ---------")
         query = input()
         if query in ["exit", "quit"]:
-            print("Thank you and goodbye!")
-            loop = False
-        else:
-            ask_chatbot(query, vector_store)
+            print("Auf Wiedersehen!")
+            break
+
+        # Chat-History + neue Frage als Messages-Liste übergeben
+        messages = chat_history + [HumanMessage(content=query)]
+        result = agent.invoke({"messages": messages}) # bisherige Konversation mitgeben
+        answer = result["messages"][-1].content
+
+        print(f"\nAntwort:\n{answer}\n")
+
+
+        # Frage + Antwort zum Verlauf hinzufügen für die nächste Runde
+        chat_history.extend([
+            HumanMessage(content=query),
+            AIMessage(content=answer),
+        ])
+
 
 def main():
     #load ressources
