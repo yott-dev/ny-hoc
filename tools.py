@@ -132,11 +132,15 @@ def create_local_search_tool(vector_store: Chroma):
         if not results:
             return "Keine relevanten Dokumente in der lokalen Datenbank gefunden."
         # Jeden Treffer mit Quellenangabe formatieren damit das LLM die Herkunft kennt
+        # section = nächstgelegene Überschrift aus dem MarkdownHeaderTextSplitter (h2 bevorzugt)
         parts = []
         for doc in results:
             meta = doc.metadata
+            section = meta.get("h2") or meta.get("h1") or ""
+            section_str = f", {section}" if section else ""
+            page_str = f", Seite {meta.get('page')}" if meta.get("page") is not None else ""
             parts.append(
-                f"[Quelle: {meta.get('source', '?')}, Seite {meta.get('page', '?')}]\n"
+                f"[Quelle: {meta.get('source', '?')}{page_str}{section_str}]\n"
                 f"{doc.page_content}"
             )
         return "\n\n".join(parts)

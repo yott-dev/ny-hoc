@@ -1,6 +1,10 @@
 import re
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+import pymupdf4llm
+import html2text
+from pathlib import Path
+from bs4 import BeautifulSoup
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain.chat_models import init_chat_model
@@ -33,25 +37,69 @@ agent_llm = init_chat_model(
     model_provider="openai",
 )
 
-file_path = "ressources/steuergesetz.pdf"
+def load_documents() -> list[Document]:
+    docs = []
 
-def load_documents(file_path):
-    #load PDFs
-    loader: PyPDFLoader = PyPDFLoader(file_path, mode="page")
-    docs: list[Document] = loader.load() #page_content, metadata
+    # wandelt PDFs mit pymupdf4llm in sauberes Markdown um
+    for pdf_path in Path("ressources/pdf").glob("*.pdf"):
+        # page_chunks=True gibt jede Seite einzeln zurück → Seitenzahl bleibt als Metadatum
+        pages = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
+        for i, page in enumerate(pages):
+            meta = page.get("metadata", {})
+            page_num = meta.get("page", meta.get("page_number", i + 1))
+            docs.append(Document(
+                page_content=page["text"],
+                metadata={"source": pdf_path.name, "page": page_num}
+            ))
+
+    # wandelt HTML mit html2text in Markdown um
+    _h2t = html2text.HTML2Text()
+    _h2t.ignore_links = False
+    _h2t.body_width = 0
+
+    for html_path in Path("ressources/html").glob("*.html"):
+        soup = BeautifulSoup(html_path.read_text(encoding="utf-8"), "html.parser")
+        # Navigation/Footer entfernen
+        for tag in soup(["nav", "footer", "header", "script", "style"]):
+            tag.decompose()
+        main_content = soup.find("main") or soup.find("article") or soup.body
+        md_text = _h2t.handle(str(main_content))
+        docs.append(Document(
+            page_content=md_text,
+            metadata={"source": html_path.name}
+        ))
+
+    print(f"{len(docs)} Dokument-Abschnitte geladen")
     return docs
 
-def split_documents(docs: list[Document]):
-    #create text splitter
-    text_splitter = RecursiveCharacterTextSplitter(
+
+def split_documents(docs: list[Document]) -> list[Document]:
+    # Pass 1: Nach Markdown-Überschriften aufteilen (## Abschnitte aus pymupdf4llm/html2text)
+    # Jeder Abschnitt bekommt den Heading-Text als Metadatum (h1, h2, h3)
+    md_splitter = MarkdownHeaderTextSplitter(
+        headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
+        strip_headers=False  # Überschrift bleibt im Chunk-Text erhalten
+    )
+
+    # Pass 2: Jeden Abschnitt nach Zeichenlänge aufteilen falls er zu gross ist
+    char_splitter = RecursiveCharacterTextSplitter(
         chunk_size=750,
         chunk_overlap=150,
-        separators=["\n\n", "\n", ".", " "] #Sätze werden bestmöglich bei Zeilenumbrüchen abgeschnitten und nicht mitten im Satz
+        separators=["\n\n", "\n", ".", " "]
     )
-    #split text into chunks
-    chunks = text_splitter.split_documents(docs)
-    #print(chunks) test
-    return chunks
+
+    all_chunks = []
+    for doc in docs:
+        # Markdown-Header-Split: gibt Chunks mit h1/h2/h3 in metadata zurück
+        header_chunks = md_splitter.split_text(doc.page_content)
+        # Source + Page aus dem Original-Dokument zu jedem Chunk hinzufügen
+        for chunk in header_chunks:
+            chunk.metadata.update(doc.metadata)
+        # Grössen-Split: lange Abschnitte weiter aufteilen
+        all_chunks.extend(char_splitter.split_documents(header_chunks))
+
+    print(f"✂️  {len(all_chunks)} Chunks erstellt")
+    return all_chunks
 
 def create_vector_store_with_embeddings():
     # create embedding model
@@ -139,9 +187,23 @@ def create_agent():
 
 
 def extract_local_sources(rag_context: str) -> list[str]:
-    # Parst den RAG-Output nach [Quelle: datei.pdf, Seite X] Einträgen
-    matches = re.findall(r'\[Quelle: ([^,]+), Seite ([^\]]+)\]', rag_context)
-    sources = [f"{file.strip()} (Seite {page.strip()})" for file, page in matches]
+    # Parst den RAG-Output nach Quelle: datei.pdf, Seite X, Abschnitt Einträgen
+    # Seite und Abschnitt sind optional (HTML-Dateien haben keine Seitenzahl)
+    matches = re.findall(
+        r'\[Quelle: ([^,\]]+)(?:, Seite ([^,\]]+))?(?:, ([^\]]+))?\]',
+        rag_context
+    )
+    sources = []
+    for file, page, section in matches:
+        entry = file.strip()
+        if page:
+            entry += f" (Seite {page.strip()}"
+            if section:
+                entry += f", {section.strip()}"
+            entry += ")"
+        elif section:
+            entry += f" ({section.strip()})"
+        sources.append(entry)
     return list(dict.fromkeys(sources))  # Duplikate entfernen, Reihenfolge beibehalten
 
 
@@ -184,7 +246,9 @@ def start_bot(vector_store: Chroma):
         # Schritt 3: Lokale Quellen direkt aus dem RAG-Output extrahieren
         local_sources = extract_local_sources(rag_context)
         if local_sources:
-            print(f"📄 Lokale Quellen: {', '.join(local_sources)}")
+            print("Lokale Quellen:")
+            for src in local_sources:
+                print(f"   • {src}")
 
         # Steuerbuch-URLs aus Agent-ToolMessages extrahieren (nur wenn Tool aufgerufen wurde)
         steuerbuch_urls = extract_steuerbuch_urls(result["messages"])
@@ -204,14 +268,14 @@ def start_bot(vector_store: Chroma):
 
 
 def main():
-    #load ressources
-    docs = load_documents(file_path)
-    #generate chunks from document
-    split_documents(docs)
-    #create vector_store with embedding model
+    # Alle PDF und HTML-Dateien laden
+    docs = load_documents()
+    # In Chunks aufteilen (zuerst nach Überschriften, dann nach Grösse)
+    chunks = split_documents(docs)
+    # create Vector Store with Embeddings
     vector_store, embeddings = create_vector_store_with_embeddings()
-    #load chunks into vector_store
-    load_documents_into_vector_store(vector_store, docs)
+    # Chunks in den Vector Store laden (nur wenn noch nicht vorhanden)
+    load_documents_into_vector_store(vector_store, chunks)
     #generate testset
     generate_testset(docs, llm, embeddings, testset_size=10)
     #run evaluation
