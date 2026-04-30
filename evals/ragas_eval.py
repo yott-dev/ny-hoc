@@ -39,7 +39,7 @@ def load_dataset():
     dataset = Dataset.load(
         name="data",
         backend="local/csv",
-        root_dir="./evals/datasets"
+        root_dir="./evals"
     )
     return dataset
 

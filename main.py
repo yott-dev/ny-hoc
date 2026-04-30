@@ -1,3 +1,4 @@
+import re
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
@@ -6,7 +7,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_chroma import Chroma
 from langchain.agents import create_agent as lc_create_agent
 
@@ -31,6 +32,7 @@ agent_llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
 )
+
 file_path = "ressources/steuergesetz.pdf"
 
 def load_documents(file_path):
@@ -76,6 +78,7 @@ def load_documents_into_vector_store(vector_store: Chroma, chunks: list[Document
         vector_store.add_documents(documents=chunks, ids=ids)
         print(f"{len(ids)} new chunks added to store")
 
+# Wird nur von run_evaluation verwendet
 def ask_chatbot(query: str, vector_store: Chroma):
     # implement retriever
     retriever = vector_store.as_retriever(
@@ -112,29 +115,50 @@ def ask_chatbot(query: str, vector_store: Chroma):
     print(f"KI-Antwort:\n{answer}\n {query_score:.2f} | {metadata.get('source', 'n/a')} | page {metadata.get('page', 'n/a')}")
     return answer, contexts
 
-def create_agent(vector_store: Chroma):
-    # Alle Tools die der Agent zur Verfügung hat
+def create_agent():
+    # Neue Tools können hier einfach zur Liste hinzugefügt werden
     tools = [
-        create_local_search_tool(vector_store),     # Tool 1: lokale PDFs (Factory aufrufen)
-        search_steuerbuch,                          # Tool 2: zh.ch Steuerbuch online
+        search_steuerbuch,  # zh.ch Steuerbuch online
     ]
 
-    # System-Prompt jetzt als einfacher String, kein ChatPromptTemplate nötig
     system_prompt = (
         "Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht. "
         "Beantworte alle Fragen auf Deutsch.\n\n"
-        "Dir stehen zwei Tools zur Verfügung:\n"
-        "- search_local_documents: Lokale PDFs (Steuergesetze, ESTV-Kreisschreiben) — zuerst nutzen\n"
-        "- search_steuerbuch: Zürcher Steuerbuch online (zh.ch) — nutzen wenn lokale Docs nicht reichen\n\n"
+        "Dir werden aufbereitete lokale Dokumente als Kontext mitgegeben. "
+        "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n"
+        "Rückfragen sind erlaubt, müssen aber auf den mitgegebenen Dokumenten basieren.\n"
+        "Falls die lokalen Dokumente nicht ausreichen, rufe search_steuerbuch auf.\n"
+        "Wenn keine eindeutige Antwort möglich ist, antworte: "
+        "'Dazu konnte ich keine eindeutige Antwort finden. "
+        "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n\n"
         "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
     )
 
-    # lc_create_agent baut den kompletten Agent-Loop intern auf
+    # lc_create_agent baut den kompletten Reasoning-Loop intern auf (LLM + Tools)
     return lc_create_agent(agent_llm, tools, system_prompt=system_prompt)
 
 
+def extract_local_sources(rag_context: str) -> list[str]:
+    # Parst den RAG-Output nach [Quelle: datei.pdf, Seite X] Einträgen
+    matches = re.findall(r'\[Quelle: ([^,]+), Seite ([^\]]+)\]', rag_context)
+    sources = [f"{file.strip()} (Seite {page.strip()})" for file, page in matches]
+    return list(dict.fromkeys(sources))  # Duplikate entfernen, Reihenfolge beibehalten
+
+
+def extract_steuerbuch_urls(messages: list) -> list[str]:
+    # Parst ToolMessages des Agents nach zh.ch-URLs aus dem search_steuerbuch Tool
+    urls = []
+    for msg in messages:
+        if isinstance(msg, ToolMessage) and msg.name == "search_steuerbuch":
+            matches = re.findall(r'Quelle: (https://[^\n]+)', msg.content)
+            urls.extend(m.strip() for m in matches)
+    return list(dict.fromkeys(urls))
+
+
 def start_bot(vector_store: Chroma):
-    agent = create_agent(vector_store)
+    agent = create_agent()
+    # RAG-Tool einmalig erstellen — wird bei jeder Anfrage direkt aufgerufen
+    local_search = create_local_search_tool(vector_store)
     chat_history = []
 
     while True:
@@ -144,15 +168,35 @@ def start_bot(vector_store: Chroma):
             print("Auf Wiedersehen!")
             break
 
-        # Chat-History + neue Frage als Messages-Liste übergeben
-        messages = chat_history + [HumanMessage(content=query)]
-        result = agent.invoke({"messages": messages}) # bisherige Konversation mitgeben
+        # Schritt 1: RAG garantiert zuerst ausführen — unabhängig vom Agent
+        rag_context = local_search.invoke({"query": query})
+
+        # Schritt 2: RAG-Ergebnisse + Frage als Kontext an den Agent übergeben
+        # Der Agent hat so immer eine dokumentierte Basis für seine Antwort oder Rückfragen
+        messages = chat_history + [HumanMessage(
+            content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
+        )]
+        result = agent.invoke({"messages": messages})
         answer = result["messages"][-1].content
 
         print(f"\nAntwort:\n{answer}\n")
 
+        # Schritt 3: Lokale Quellen direkt aus dem RAG-Output extrahieren
+        local_sources = extract_local_sources(rag_context)
+        if local_sources:
+            print(f"📄 Lokale Quellen: {', '.join(local_sources)}")
 
-        # Frage + Antwort zum Verlauf hinzufügen für die nächste Runde
+        # Steuerbuch-URLs aus Agent-ToolMessages extrahieren (nur wenn Tool aufgerufen wurde)
+        steuerbuch_urls = extract_steuerbuch_urls(result["messages"])
+        if steuerbuch_urls:
+            print("🔗 Steuerbuch-Quellen (zh.ch):")
+            for url in steuerbuch_urls:
+                print(f"   {url}")
+
+        print()
+
+        # Nur die originale Frage (ohne eingebetteten RAG-Kontext) in der History speichern
+        # so bleibt die History kompakt und der Kontext wird bei jedem Turn neu geladen
         chat_history.extend([
             HumanMessage(content=query),
             AIMessage(content=answer),
