@@ -8,8 +8,51 @@ from ragas.metrics.collections import AnswerAccuracy, Faithfulness, AnswerReleva
 from ragas.llms import llm_factory
 from openai import AsyncOpenAI
 from ragas.embeddings.base import embedding_factory
+from langchain_core.prompts import ChatPromptTemplate
 
+#ask_chatbot
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain_chroma import Chroma
+from langchain.chat_models import init_chat_model
 
+# Wird nur von run_evaluation verwendet
+def ask_chatbot(query: str, vector_store: Chroma, llm):
+    # implement retriever
+    retriever = vector_store.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 5},
+    )
+
+    #search
+    #results_with_scores = vector_store.similarity_search_with_score(query, k=5) delete?
+    #query_score = results_with_scores[0][-1] delete?
+    #search vector store
+    retrieve_data = retriever.invoke(query)
+    #save metadata from received chunk for output
+    #metadata = retrieve_data[0].metadata delete?
+    # Contexts für RAGAS extrahieren
+    contexts = [doc.page_content for doc in retrieve_data]
+    # Prompt / chain begins
+    # Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...
+    template = """Du bist ein hilfsbereiter Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
+    um die Frage zu beantworten".
+    Kontext:
+    {context}
+    Frage: {question}
+    """
+    prompt = ChatPromptTemplate.from_template(template)
+    rag_chain = (
+            {"context": retriever, "question": RunnablePassthrough()}
+            | prompt
+            | llm
+            | StrOutputParser()
+    )
+    question = query
+    answer = rag_chain.invoke(question)
+    return answer, contexts
+
+#generates testset with ragas (not implemented due to rags issues)
 def generate_testset(docs, ragas_llm, ragas_embeddings, testset_size=10):
     csv_path = "evals/datasets/data.csv"
 
@@ -43,9 +86,10 @@ def load_dataset():
     )
     return dataset
 
-def run_evaluation(vector_store, chatbot_fn):
+def run_evaluation(vector_store):
     client = AsyncOpenAI()
     llm = llm_factory("gpt-4o", client=client)
+    langchain_llm = init_chat_model("gpt-4o", model_provider="openai")
     embeddings = embedding_factory(
         "openai",
         model="text-embedding-3-large",
@@ -64,7 +108,7 @@ def run_evaluation(vector_store, chatbot_fn):
 
     @experiment()
     async def run_experiment(row):
-        answer, contexts = chatbot_fn(row["user_input"], vector_store)
+        answer, contexts = ask_chatbot(row["user_input"], vector_store, langchain_llm)
 
         # Alle Metriken parallel berechnen
         accuracy, faith, relevancy, precision, recall = await asyncio.gather(

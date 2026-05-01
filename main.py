@@ -28,13 +28,17 @@ import streamlit as st
 from langchain.agents.middleware import PIIMiddleware
 
 # Für einfache RAG-Abfragen (Evaluation)
-llm = init_chat_model(
-    "gpt-4o",
+"""
+ragas_llm = init_chat_model(
+    "gpt-4o-mini",
     model_provider="openai",
     #Antwort auf 200 tokens beschränken
     max_tokens=200,
     temperature=0
 )
+"""
+
+#TODO: eigenes Modell für security überprüfung bezüglich schädlichen Wörtern
 
 # ---> Noah: Für den Agent (mehr Tokens für Reasoning + Tool-Calls)
 agent_llm = init_chat_model(
@@ -171,7 +175,7 @@ def create_agent():
     return lc_create_agent(agent_llm, tools, middleware=middleware, system_prompt=system_prompt, debug=False)
 
 # Implementation für das UI
-def start_bot(vector_store):
+def start_ui(vector_store):
     st.title("Steuer-Assistenz")
 
     # Initialize chat history -> create list if not crated yet
@@ -293,14 +297,14 @@ def main():
         docs = load_documents()
         chunks = split_documents(docs)
         load_documents_into_vector_store(vector_store, chunks)
-    
+
     #generate testset
     #generate_testset(docs, llm, embeddings, testset_size=10)
     #run evaluation
-    #run_evaluation(vector_store, ask_chatbot)
+    run_evaluation(vector_store)
     #start bot with retrieving information
-
     start_bot(vector_store)
+    #start_ui(vector_store)
 
 if __name__ == "__main__":
     main()
