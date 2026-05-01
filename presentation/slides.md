@@ -52,7 +52,7 @@ Ein Chatbot der Fragen zu Züricher Steuerrecht beantwortet:
 
 ---
 layout: section
---
+---
 
 # 2. Architektur
 
@@ -63,22 +63,33 @@ layout: section
 <script setup>
 const archDiagram = `
 flowchart LR
-    USER([Benutzer])
-    PDF[PDFs] -->|Indexierung| DB
-    HTML[HTML] -->|Indexierung| DB
-    USER --> EMB[Embedding]
-    EMB --> DB[(ChromaDB)]
-    DB --> CHUNKS[Top-5 Chunks]
-    CHUNKS --> DEC
-    USER -->|Frage| DEC
-    DEC{Kontext ok?} -->|Ja| ANS[Antwort]
-    DEC -->|Nein| TOOL[search_steuerbuch] --> LIVE[zh.ch API] --> ANS
-    ANS --> OUT([Antwort + Quellen])
+    USER_IN([Benutzer])
+
+    subgraph RAG [Schritt 1 - RAG]
+        PDF[PDFs] --> DB
+        HTML[HTML] --> DB
+        EMB[Embedding] --> DB[(ChromaDB)] --> CHUNKS[Top-5 Chunks]
+    end
+
+    subgraph AGENT [Schritt 2 - LLM-Agent GPT-4o]
+        DEC{Kontext\nausreichend?}
+        ANS[Antwort\naus RAG]
+        TOOL[search_steuerbuch]
+        API[zh.ch API live]
+        DEC -->|Ja| ANS
+        DEC -->|Nein| TOOL --> API --> ANS
+    end
+
+    USER_OUT([Antwort + Lokale Quellen + Steuerbuch-URLs])
+
+    USER_IN -->|Frage| EMB
+    CHUNKS -->|Lokaler Kontext| DEC
+    ANS --> USER_OUT
 `
-const archOptions = { nodeSpacing: 14, layerSpacing: 24, padding: 12 }
+const archOptions = { nodeSpacing: 12, layerSpacing: 18, padding: 12 }
 </script>
 
-<div class="w-full h-80 overflow-hidden flex items-center justify-center">
+<div class="w-full h-72 overflow-hidden flex items-center justify-center">
   <BeautifulMermaid :diagram="archDiagram" theme="zinc-dark" :options="archOptions" />
 </div>
 
@@ -113,7 +124,7 @@ flowchart LR
 ```
 
 ---
-e
+
 ## Zwei-Pass Splitting
 
 **Warum zwei Splitting-Schritte?**

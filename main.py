@@ -170,6 +170,7 @@ def create_agent():
     # lc_create_agent baut den kompletten Agent-Loop intern auf
     return lc_create_agent(agent_llm, tools, middleware=middleware, system_prompt=system_prompt, debug=False)
 
+# Implementation für das UI
 def start_bot(vector_store):
     st.title("Steuer-Assistenz")
 
@@ -282,19 +283,23 @@ def start_bot(vector_store: Chroma):
 
 #seperate function to cache data before UI starts
 def main():
-    # Alle PDF und HTML-Dateien laden
-    docs = load_documents()
-    # In Chunks aufteilen (zuerst nach Überschriften, dann nach Grösse)
-    chunks = split_documents(docs)
-    # create Vector Store with Embeddings
-    vector_store, embeddings = create_vector_store_with_embeddings()
-    # Chunks in den Vector Store laden (nur wenn noch nicht vorhanden)
-    load_documents_into_vector_store(vector_store, chunks)
+    # create Vector Store with Embeddings (_ ist die Python-Konvention für "wird nicht gebraucht)
+    vector_store, _ = create_vector_store_with_embeddings()
+
+    # Nur laden und splitten wenn die DB noch leer ist
+    if vector_store.get(limit=1)["ids"]:
+        print("✅ Vector Store bereits befüllt — Laden und Splitting übersprungen")
+    else:
+        docs = load_documents()
+        chunks = split_documents(docs)
+        load_documents_into_vector_store(vector_store, chunks)
+    
     #generate testset
     #generate_testset(docs, llm, embeddings, testset_size=10)
     #run evaluation
     #run_evaluation(vector_store, ask_chatbot)
     #start bot with retrieving information
+
     start_bot(vector_store)
 
 if __name__ == "__main__":
