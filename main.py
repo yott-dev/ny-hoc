@@ -28,15 +28,6 @@ import streamlit as st
 from langchain.agents.middleware import PIIMiddleware
 
 # Für einfache RAG-Abfragen (Evaluation)
-"""
-ragas_llm = init_chat_model(
-    "gpt-4o-mini",
-    model_provider="openai",
-    #Antwort auf 200 tokens beschränken
-    max_tokens=200,
-    temperature=0
-)
-"""
 
 #TODO: eigenes Modell für security überprüfung bezüglich schädlichen Wörtern
 
@@ -128,7 +119,7 @@ def make_ids(chunks: list[Document]) -> list[str]:
 def load_documents_into_vector_store(vector_store: Chroma, chunks: list[Document]):
     ids = make_ids(chunks)
     if vector_store.get(ids[:1])["ids"]:
-        print("✅ Already in store")
+        print("All chunks already in store")
     else:
         # load chunks with ids into vector store, chunks gets automatically embedded
         vector_store.add_documents(documents=chunks, ids=ids)
@@ -140,14 +131,13 @@ def create_agent():
         search_steuerbuch,  # zh.ch Steuerbuch online
     ]
     middleware = [
-
         # E-Mails im Input anonymisieren UND im Output
         PIIMiddleware(
             "email",
             strategy="redact",
             apply_to_input=True,
-            apply_to_output=False,  # ← das fehlte wahrscheinlich
-            apply_to_tool_results=False  # ← auch Tool-Antworten prüfen
+            apply_to_output=False,
+            apply_to_tool_results=False
         ),
         # Kreditkarten blockieren
         PIIMiddleware(
@@ -156,6 +146,8 @@ def create_agent():
             apply_to_input=True,
             apply_to_output=True,
         ),
+        #TODO: add harmfulword filter
+        #TODO: ModelCallLimitMiddleware -> limits excessive costs
     ]
 
     system_prompt = (
@@ -173,38 +165,6 @@ def create_agent():
 
     # lc_create_agent baut den kompletten Agent-Loop intern auf
     return lc_create_agent(agent_llm, tools, middleware=middleware, system_prompt=system_prompt, debug=False)
-
-# Implementation für das UI
-def start_ui(vector_store):
-    st.title("Steuer-Assistenz")
-
-    # Initialize chat history -> create list if not crated yet
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    with st.chat_message("assistant"):
-        st.write("Hallo, ich bin Tax, dein Steuerassistent 👋\n Ich beantworte deine Zürcher Steuerfragen")
-
-    # load all previous chats if rerun
-    # Display chat messages from history on app rerun
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # React to user input
-    if prompt := st.chat_input("Wie kann ich helfen?"):
-        # Display user message in chat message container
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": prompt})
-
-    response = f"Echo: {prompt}"
-    # Display assistant response in chat message container
-    with st.chat_message("assistant"):
-        st.markdown(response)
-    # Add assistant response to chat history
-    st.session_state.messages.append({"role": "assistant", "content": response})
 
 def extract_local_sources(rag_context: str) -> list[str]:
     # Parst den RAG-Output nach Quelle: datei.pdf, Seite X, Abschnitt Einträgen
@@ -235,62 +195,110 @@ def extract_steuerbuch_urls(messages: list) -> list[str]:
             urls.extend(m.strip() for m in matches)
     return list(dict.fromkeys(urls))
 
-def start_bot(vector_store: Chroma):
+# Implementation für das UI
+def start_ui():
+    st.title("Steuer-Assistenz")
+    """
+    # Initialize chat history -> create list if not crated yet
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    with st.chat_message("assistant"):
+        st.write("Hallo, ich bin Tax, dein Steuerassistent 👋\n Ich beantworte deine Zürcher Steuerfragen")
+
+    # load all previous chats if rerun
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # React to user input
+    if prompt := st.chat_input("Wie kann ich helfen?"):
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+        response = f"Echo: {prompt}"
+        # Display assistant response in chat message container
+        with st.chat_message("assistant"):
+            st.markdown(response)
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        """
+
+
+def get_agent_response(query, vector_store, chat_history):
+    # Agent und Tool erstellen (idealerweise außerhalb oder gecached)
     agent = create_agent()
-    # RAG-Tool einmalig erstellen — wird bei jeder Anfrage direkt aufgerufen
     local_search = create_local_search_tool(vector_store)
-    chat_history = []
 
-    while True:
-        print("-------- Ask me anything ---------")
-        query = input("Was möchtest du wissen?:\n")
+    # 1. RAG Kontext holen
+    rag_context = local_search.invoke({"query": query})
 
-        if query in ["exit", "quit"]:
-            print("Auf Wiedersehen!")
-            break
+    # 2. Nachrichten für Agent bauen
+    messages = chat_history + [HumanMessage(
+        content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
+    )]
 
-        # Schritt 1: RAG garantiert zuerst ausführen — unabhängig vom Agent
-        rag_context = local_search.invoke({"query": query})
+    # 3. Agent fragen
+    result = agent.invoke({"messages": messages})
+    return result, rag_context
 
-        # Schritt 2: RAG-Ergebnisse + Frage als Kontext an den Agent übergeben
-        # Der Agent hat so immer eine dokumentierte Basis für seine Antwort oder Rückfragen
-        messages = chat_history + [HumanMessage(
-            content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
-        )]
-        result = agent.invoke({"messages": messages})
-        answer = result["messages"][-1].content
 
-        print(f"\nAntwort:\n{answer}\n")
+def start_agent(vector_store: Chroma):
+    st.title("Steuer-Assistenz")
+    st.info("Keine Haftung für falsche Angaben", icon="🚨", width="stretch")
 
-        # Schritt 3: Lokale Quellen direkt aus dem RAG-Output extrahieren
-        local_sources = extract_local_sources(rag_context)
-        if local_sources:
-            print("Lokale Quellen:")
-            for src in local_sources:
-                print(f"   • {src}")
+    # 1. Session State initialisieren
+    if "messages" not in st.session_state:
+        st.session_state.messages = []  # Liste aus Dictionaries für UI
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []  # Liste aus Message-Objekten für Agent
 
-        # Steuerbuch-URLs aus Agent-ToolMessages extrahieren (nur wenn Tool aufgerufen wurde)
-        steuerbuch_urls = extract_steuerbuch_urls(result["messages"])
-        if steuerbuch_urls:
-            print("🔗 Steuerbuch-Quellen (zh.ch):")
-            for url in steuerbuch_urls:
-                print(f"   {url}")
+    # 2. Historie anzeigen
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-        print()
+    # 3. Der EINZIGE Chat Input
+    if prompt := st.chat_input("Wie kann ich helfen?", key="main_chat"):
+        # User-Eingabe anzeigen & speichern
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-        # Nur die originale Frage (ohne eingebetteten RAG-Kontext) in der History speichern
-        # so bleibt die History kompakt und der Kontext wird bei jedem Turn neu geladen
-        chat_history.extend([
-            HumanMessage(content=query),
+
+        # 4. Logik ausführen
+        with st.chat_message("assistant"):
+            with st.spinner("Ich durchsuche die Steuergesetze..."):
+                result, rag_context = get_agent_response(
+                    prompt,
+                    vector_store,
+                    st.session_state.chat_history
+                )
+                answer = result["messages"][-1].content
+                st.markdown(answer)
+
+                # Optionale Quellen-Anzeige
+                local_sources = extract_local_sources(rag_context)
+                if local_sources:
+                    st.caption(f"Quellen: {', '.join(local_sources)}")
+
+
+        # 5. Historie aktualisieren
+        st.session_state.messages.append({"role": "assistant", "content": answer})
+        st.session_state.chat_history.extend([
+            HumanMessage(content=prompt),
             AIMessage(content=answer),
         ])
 
-#seperate function to cache data before UI starts
 def main():
     # create Vector Store with Embeddings (_ ist die Python-Konvention für "wird nicht gebraucht)
     vector_store, _ = create_vector_store_with_embeddings()
 
-    # Nur laden und splitten wenn die DB noch leer ist
+    # Nur laden und splitten, wenn die DB noch leer ist
     if vector_store.get(limit=1)["ids"]:
         print("✅ Vector Store bereits befüllt — Laden und Splitting übersprungen")
     else:
@@ -298,13 +306,10 @@ def main():
         chunks = split_documents(docs)
         load_documents_into_vector_store(vector_store, chunks)
 
-    #generate testset
-    #generate_testset(docs, llm, embeddings, testset_size=10)
     #run evaluation
-    run_evaluation(vector_store)
-    #start bot with retrieving information
-    start_bot(vector_store)
-    #start_ui(vector_store)
+    #run_evaluation(vector_store)
+    start_agent(vector_store)
+
 
 if __name__ == "__main__":
     main()
