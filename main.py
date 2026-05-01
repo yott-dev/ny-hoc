@@ -15,12 +15,17 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_chroma import Chroma
 from langchain.agents import create_agent as lc_create_agent
 
-
 #----RAGAS-----
-from evals.ragas_eval import run_evaluation, generate_testset
+from evals.ragas_eval import run_evaluation
 
 #----Tools-----
 from tools import search_steuerbuch, create_local_search_tool
+
+#-----ui-------
+import streamlit as st
+
+#-----middleware------
+from langchain.agents.middleware import PIIMiddleware
 
 # Für einfache RAG-Abfragen (Evaluation)
 llm = init_chat_model(
@@ -71,7 +76,6 @@ def load_documents() -> list[Document]:
 
     print(f"{len(docs)} Dokument-Abschnitte geladen")
     return docs
-
 
 def split_documents(docs: list[Document]) -> list[Document]:
     # Pass 1: Nach Markdown-Überschriften aufteilen (## Abschnitte aus pymupdf4llm/html2text)
@@ -126,47 +130,28 @@ def load_documents_into_vector_store(vector_store: Chroma, chunks: list[Document
         vector_store.add_documents(documents=chunks, ids=ids)
         print(f"{len(ids)} new chunks added to store")
 
-# Wird nur von run_evaluation verwendet
-def ask_chatbot(query: str, vector_store: Chroma):
-    # implement retriever
-    retriever = vector_store.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 5},
-    )
-
-    #search
-    results_with_scores = vector_store.similarity_search_with_score(query, k=5)
-    query_score = results_with_scores[0][-1]
-    #search vector store
-    retrieve_data = retriever.invoke(query)
-    #save metadata from received chunk for output
-    metadata = retrieve_data[0].metadata
-    # Contexts für RAGAS extrahieren
-    contexts = [doc.page_content for doc in retrieve_data]
-    # Prompt / chain begins
-    #Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...
-    template = """Du bist ein hilfsbereiter Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
-    um die Frage zu beantworten".
-    Kontext:
-    {context}
-    Frage: {question}
-    """
-    prompt = ChatPromptTemplate.from_template(template)
-    rag_chain = (
-            {"context": retriever, "question": RunnablePassthrough()}
-            | prompt
-            | llm
-            | StrOutputParser()
-    )
-    question = query
-    answer = rag_chain.invoke(question)
-    print(f"KI-Antwort:\n{answer}\n {query_score:.2f} | {metadata.get('source', 'n/a')} | page {metadata.get('page', 'n/a')}")
-    return answer, contexts
-
 def create_agent():
     # Neue Tools können hier einfach zur Liste hinzugefügt werden
     tools = [
         search_steuerbuch,  # zh.ch Steuerbuch online
+    ]
+    middleware = [
+
+        # E-Mails im Input anonymisieren UND im Output
+        PIIMiddleware(
+            "email",
+            strategy="redact",
+            apply_to_input=True,
+            apply_to_output=False,  # ← das fehlte wahrscheinlich
+            apply_to_tool_results=False  # ← auch Tool-Antworten prüfen
+        ),
+        # Kreditkarten blockieren
+        PIIMiddleware(
+            "credit_card",
+            strategy="block",
+            apply_to_input=True,
+            apply_to_output=True,
+        ),
     ]
 
     system_prompt = (
@@ -182,9 +167,39 @@ def create_agent():
         "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
     )
 
-    # lc_create_agent baut den kompletten Reasoning-Loop intern auf (LLM + Tools)
-    return lc_create_agent(agent_llm, tools, system_prompt=system_prompt)
+    # lc_create_agent baut den kompletten Agent-Loop intern auf
+    return lc_create_agent(agent_llm, tools, middleware=middleware, system_prompt=system_prompt, debug=False)
 
+def start_bot(vector_store):
+    st.title("Steuer-Assistenz")
+
+    # Initialize chat history -> create list if not crated yet
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    with st.chat_message("assistant"):
+        st.write("Hallo, ich bin Tax, dein Steuerassistent 👋\n Ich beantworte deine Zürcher Steuerfragen")
+
+    # load all previous chats if rerun
+    # Display chat messages from history on app rerun
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # React to user input
+    if prompt := st.chat_input("Wie kann ich helfen?"):
+        # Display user message in chat message container
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+
+    response = f"Echo: {prompt}"
+    # Display assistant response in chat message container
+    with st.chat_message("assistant"):
+        st.markdown(response)
+    # Add assistant response to chat history
+    st.session_state.messages.append({"role": "assistant", "content": response})
 
 def extract_local_sources(rag_context: str) -> list[str]:
     # Parst den RAG-Output nach Quelle: datei.pdf, Seite X, Abschnitt Einträgen
@@ -206,7 +221,6 @@ def extract_local_sources(rag_context: str) -> list[str]:
         sources.append(entry)
     return list(dict.fromkeys(sources))  # Duplikate entfernen, Reihenfolge beibehalten
 
-
 def extract_steuerbuch_urls(messages: list) -> list[str]:
     # Parst ToolMessages des Agents nach zh.ch-URLs aus dem search_steuerbuch Tool
     urls = []
@@ -216,7 +230,6 @@ def extract_steuerbuch_urls(messages: list) -> list[str]:
             urls.extend(m.strip() for m in matches)
     return list(dict.fromkeys(urls))
 
-
 def start_bot(vector_store: Chroma):
     agent = create_agent()
     # RAG-Tool einmalig erstellen — wird bei jeder Anfrage direkt aufgerufen
@@ -225,7 +238,8 @@ def start_bot(vector_store: Chroma):
 
     while True:
         print("-------- Ask me anything ---------")
-        query = input()
+        query = input("Was möchtest du wissen?:\n")
+
         if query in ["exit", "quit"]:
             print("Auf Wiedersehen!")
             break
@@ -266,7 +280,7 @@ def start_bot(vector_store: Chroma):
             AIMessage(content=answer),
         ])
 
-
+#seperate function to cache data before UI starts
 def main():
     # Alle PDF und HTML-Dateien laden
     docs = load_documents()
@@ -277,7 +291,7 @@ def main():
     # Chunks in den Vector Store laden (nur wenn noch nicht vorhanden)
     load_documents_into_vector_store(vector_store, chunks)
     #generate testset
-    generate_testset(docs, llm, embeddings, testset_size=10)
+    #generate_testset(docs, llm, embeddings, testset_size=10)
     #run evaluation
     #run_evaluation(vector_store, ask_chatbot)
     #start bot with retrieving information
