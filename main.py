@@ -16,7 +16,7 @@ from langchain_chroma import Chroma
 from langchain.agents import create_agent as lc_create_agent
 
 #----RAGAS-----
-from evals.ragas_eval import run_evaluation
+from evals.ragas_eval import run_evaluation, run_agent_evaluation
 
 #----Tools-----
 from tools import search_steuerbuch, create_local_search_tool
@@ -154,9 +154,12 @@ def create_agent():
         "Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht. "
         "Beantworte alle Fragen auf Deutsch.\n\n"
         "Dir werden aufbereitete lokale Dokumente als Kontext mitgegeben. "
-        "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n"
-        "Rückfragen sind erlaubt, müssen aber auf den mitgegebenen Dokumenten basieren.\n"
-        "Falls die lokalen Dokumente nicht ausreichen, rufe search_steuerbuch auf.\n"
+        "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n\n"
+        "TOOL-PFLICHT: Rufe search_steuerbuch auf bei:\n"
+        "- Fragen zu Zürich-spezifischen Regelungen, Steuersätzen oder Fristen\n"
+        "- Fragen zu konkreten ZStB-Artikeln oder dem Steuerbuch\n"
+        "- Unklaren oder unvollständigen Antworten aus den lokalen Dokumenten\n"
+        "Rufe das Tool IMMER auf wenn Zweifel bestehen — auch wenn lokale Dokumente vorhanden sind.\n\n"
         "Wenn keine eindeutige Antwort möglich ist, antworte: "
         "'Dazu konnte ich keine eindeutige Antwort finden. "
         "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n\n"
@@ -249,7 +252,7 @@ def get_agent_response(query, vector_store, chat_history):
 
 def start_agent(vector_store: Chroma):
     st.title("Steuer-Assistenz")
-    st.info("Keine Haftung für falsche Angaben", icon="🚨", width="stretch")
+    st.info("Die Antworten stellen keine rechtsverbindliche Auskunft dar und können Fehler enthalten und kantonal variieren. Es wird keinerlei Haftung übernommen.", icon="🚨", width="stretch")
 
     # 1. Session State initialisieren
     if "messages" not in st.session_state:
@@ -281,10 +284,13 @@ def start_agent(vector_store: Chroma):
                 answer = result["messages"][-1].content
                 st.markdown(answer)
 
-                # Optionale Quellen-Anzeige
+                # Lokale Quellen aus RAG anzeigen
                 local_sources = extract_local_sources(rag_context)
+                steuerbuch_urls = extract_steuerbuch_urls(result["messages"])
                 if local_sources:
-                    st.caption(f"Quellen: {', '.join(local_sources)}")
+                    st.caption(f"Quellen: \n\n {', '.join(local_sources)}")
+                if steuerbuch_urls:
+                    st.caption("Steuerbuch-Quellen: \n\n " + " · ".join(steuerbuch_urls))
 
 
         # 5. Historie aktualisieren
@@ -306,8 +312,8 @@ def main():
         chunks = split_documents(docs)
         load_documents_into_vector_store(vector_store, chunks)
 
-    #run evaluation
     #run_evaluation(vector_store)
+    #run_agent_evaluation(vector_store, get_agent_response)
     start_agent(vector_store)
 
 

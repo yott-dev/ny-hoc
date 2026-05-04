@@ -5,6 +5,10 @@ from langchain_core.tools import tool
 from langchain_chroma import Chroma
 from langchain_core.tools import tool
 
+# misst wie ähnlich zwei Texte sind, auch wenn sie nicht exakt übereinstimmen (günstiger als embedding)
+from rapidfuzz import fuzz
+
+
 
 # ── Konstanten
 BASE_URL = "https://www.zh.ch"
@@ -19,7 +23,9 @@ SEARCH_API = (
 )
 
 # Maximale Anzahl Steuerbuch-Seiten die pro Tool-Aufruf geladen werden (verhindert endlos loops)
-MAX_URL_READS = 10
+MAX_API_RESULTS = 30   # Wie viele Einträge die API zurückgeben soll (nur JSON)
+MAX_URL_READS   = 3    # Wie viele Seiten davon wirklich geladen werden (langsam)
+
 
 
 # HTML zu Text Konverter 
@@ -29,7 +35,7 @@ _html_to_text.ignore_images = True   # Bilder weglassen
 _html_to_text.body_width = 0         # Keine automatischen Zeilenumbrüche
 
 
-def _fetch_page_text(url: str, max_chars: int = 3000) -> str:
+def _fetch_page_text(url: str, max_chars: int = 10000) -> str:
     """Lädt eine Steuerbuch-Seite und gibt nur den Dokumentinhalt als Text zurück.
 
     Die Seiten sind server-side gerendert → kein JavaScript / kein Headless-Browser nötig.
@@ -53,10 +59,21 @@ def _fetch_page_text(url: str, max_chars: int = 3000) -> str:
 
 @tool
 def search_steuerbuch(query: str) -> str:
-    """Durchsucht das Zürcher Steuerbuch (zh.ch) nach aktuellen kantonalen Steuervorschriften.
-    Verwende dieses Tool wenn die lokalen Dokumente keine ausreichende Antwort liefern
-    oder wenn explizit nach Züricher kantonalen Regelungen gefragt wird.
-    Gibt Titel, ZStB-Nummer und Textinhalt der relevantesten Einträge zurück."""
+    """Durchsucht das Zürcher Steuerbuch (zh.ch) — die verbindliche Rechtsquelle für kantonales Steuerrecht.
+
+    WANN AUFRUFEN (Pflicht):
+    - Bei jeder Frage zu Zürich-spezifischen Steuerregeln, auch wenn lokale Dokumente vorhanden sind
+    - Bei konkreten Fragen zu Steuersätzen, Fristen, Formularen oder ZStB-Artikelnummern
+    - Wenn der Benutzer explizit nach dem Steuerbuch, zh.ch oder aktuellen kantonalen Regelungen fragt
+    - Bei Zweifeln ob lokale Dokumente aktuell oder vollständig sind
+
+    THEMEN IM ZÜRCHER STEUERBUCH:
+    Steuerpflicht, Steuerbefreiung, Einkommenssteuer, Vermögenssteuer, Abzüge,
+    Steuertarife, Quellensteuer, Grundstückgewinnsteuer, Erbschaftssteuer,
+    Schenkungssteuer, Handänderungssteuer, Verrechnungssteuer,
+    juristische Personen, Steuerverfahren, Einsprache, Rekurs
+
+    Gibt Titel, ZStB-Nummer, Quellenlink und Volltext der relevantesten Einträge zurück."""
 
     # 1: Steuerbuch-API abfragen
     # Die API gibt eine JSON-Liste mit passenden Steuerbuch-Einträgen zurück.
@@ -75,17 +92,25 @@ def search_steuerbuch(query: str) -> str:
     except Exception as e:
         return f"API-Abfrage fehlgeschlagen: {e}"
 
-    entries = search_data.get("data", [])
+    entries = search_data.get("data", [])[:MAX_API_RESULTS]
     if not entries:
         return f"Keine Steuerbuch-Einträge für '{query}' gefunden."
 
     total_results = search_data.get("numberOfResults", len(entries))
 
-    # 2: Seiteninhalte laden
+    # 2: Titel-Scoring mit rapidfuzz — relevanteste Einträge zuerst laden
+    # partial_ratio prüft ob die Query als Teilstring im Titel vorkommt (toleriert Wortstellung)
+    for entry in entries:
+        title = entry.get("recordfield-flexdataschemainputftitel", "")
+        entry["_score"] = fuzz.partial_ratio(query.lower(), title.lower())
+
+    entries = sorted(entries, key=lambda e: e["_score"], reverse=True)[:MAX_URL_READS]
+
+    # 3: Seiteninhalte der relevantesten Einträge laden
     # Jeder Eintrag enthält ein "link"-Feld mit dem relativen Pfad zur Steuerbuch-Seite.
     collected = []
 
-    for entry in entries[:MAX_URL_READS]:
+    for entry in entries:
         relative_link = entry.get("link", "")
         title = entry.get("recordfield-flexdataschemainputftitel", "Kein Titel")
         zstb_nr = entry.get("recordfield-flexdataschemainputfzstb-nummer", "?")
@@ -112,7 +137,7 @@ def search_steuerbuch(query: str) -> str:
     if not collected:
         return "Suchergebnisse gefunden, aber keine Seiten konnten geladen werden."
 
-    # 3: Ergebnisse zusammenführen und zurückgeben
+    # 4: Ergebnisse zusammenführen und zurückgeben
     # Trennzeichen zwischen Einträgen erleichtert dem LLM die Strukturerkennung.
     header = (
         f"Steuerbuch-Suche: '{query}' – "
@@ -148,14 +173,32 @@ def create_local_search_tool(vector_store: Chroma):
     return search_local_documents
 
 
-# Lokaler Test 
-# Wird nur ausgeführt wenn python tools.py gestartet wird
-# Beim Import durch main.py wird dieser Block ignoriert.
+# Lokaler Test — wird nur ausgeführt wenn `uv run python tools.py` gestartet wird.
 if __name__ == "__main__":
+    import requests as _req
     test_query = "Miete"
-    print(f"Teste Tool mit Query: '{test_query}'\n")
-    print("=" * 60)
+    print(f"\nQuery: '{test_query}'")
+
+    # Schritt 1: API
+    raw = _req.get(SEARCH_API, params={"keyword": test_query, "page": 1}, timeout=10).json()
+    entries = raw.get("data", [])[:MAX_API_RESULTS]
+    print(f"Schritt 1 – API: {raw.get('numberOfResults')} Treffer, {len(entries)} geladen")
+
+    # Schritt 2: Scoring
+    for e in entries:
+        e["_score"] = fuzz.partial_ratio(test_query.lower(), e.get("recordfield-flexdataschemainputftitel","").lower())
+    top = sorted(entries, key=lambda e: e["_score"], reverse=True)[:MAX_URL_READS]
+    print(f"Schritt 2 – Scoring Top {MAX_URL_READS}:")
+    for e in top:
+        print(f"  [{e['_score']}] {e.get('recordfield-flexdataschemainputfzstb-nummer','?')} – {e.get('recordfield-flexdataschemainputftitel','?')}")
+
+    # Schritt 3: Seite laden
+    print(f"Schritt 3 – Seiteninhalte:")
+    for e in top:
+        url = BASE_URL + e.get("link", "")
+        text = _fetch_page_text(url)
+        print(f"  {url} → {len(text)} Zeichen")
 
     # .invoke() ist der LangChain-Aufruf für Tools (statt direktem Funktionsaufruf)
-    result = search_steuerbuch.invoke({"query": test_query})
-    print(result)
+    # result = search_steuerbuch.invoke({"query": test_query})
+    # print(result)

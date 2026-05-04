@@ -9,6 +9,7 @@ from ragas.llms import llm_factory
 from openai import AsyncOpenAI
 from ragas.embeddings.base import embedding_factory
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import ToolMessage
 
 #ask_chatbot
 from langchain_core.runnables import RunnablePassthrough
@@ -131,3 +132,54 @@ def run_evaluation(vector_store):
 
     results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_v1"))
     print(results)
+
+
+def run_agent_evaluation(vector_store, agent_fn):
+    client = AsyncOpenAI()
+    llm = llm_factory("gpt-4o", client=client)
+    embeddings = embedding_factory(
+        "openai",
+        model="text-embedding-3-large",
+        client=client,
+        interface="modern"
+    )
+
+    # Alle Metriken initialisieren
+    answer_accuracy = AnswerAccuracy(llm=llm)
+    faithfulness = Faithfulness(llm=llm)
+
+    dataset = load_dataset()
+
+    @experiment()
+    async def run_experiment(row):
+        result, rag_context = agent_fn(row["user_input"], vector_store, [])
+        answer = result["messages"][-1].content
+
+        # RAG-Chunks aus dem formatierten String rausschneiden
+        rag_chunks = [block.strip() for block in rag_context.split("\n\n") if block.strip()]
+
+        # Tool-Texte aus ToolMessages extrahieren
+        tool_texts = [msg.content for msg in result["messages"] if isinstance(msg, ToolMessage)]
+
+        contexts = rag_chunks + tool_texts
+
+        # Alle Metriken parallel berechnen
+        accuracy, faith = await asyncio.gather(
+            answer_accuracy.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
+            faithfulness.ascore(user_input=row["user_input"], response=answer, retrieved_contexts=contexts),
+        )
+
+        return {
+            **row,
+            "response": answer,
+            "answer_accuracy": accuracy.value,
+            "faithfulness": faith.value,
+        }
+
+    results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_agent_v1"))
+    print(results)
+
+
+
+
+
