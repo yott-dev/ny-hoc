@@ -24,10 +24,14 @@ from tools import search_steuerbuch, create_local_search_tool
 #-----ui-------
 import streamlit as st
 
+#------logging, monitoring------
+from langchain_core.globals import set_verbose, set_debug
+
 #-----middleware------
 from langchain.agents.middleware import PIIMiddleware
 
-# Für einfache RAG-Abfragen (Evaluation)
+#---- custom middleware
+from custom_agents import TopicGuardrailMiddleware
 
 #TODO: eigenes Modell für security überprüfung bezüglich schädlichen Wörtern
 
@@ -131,6 +135,7 @@ def create_agent():
         search_steuerbuch,  # zh.ch Steuerbuch online
     ]
     middleware = [
+
         # E-Mails im Input anonymisieren UND im Output
         PIIMiddleware(
             "email",
@@ -139,6 +144,7 @@ def create_agent():
             apply_to_output=False,
             apply_to_tool_results=False
         ),
+
         # Kreditkarten blockieren
         PIIMiddleware(
             "credit_card",
@@ -146,7 +152,9 @@ def create_agent():
             apply_to_input=True,
             apply_to_output=True,
         ),
-        #TODO: add harmfulword filter
+        # Against harmful questions related to Weapons, Bombs etc.
+        TopicGuardrailMiddleware(),
+
         #TODO: ModelCallLimitMiddleware -> limits excessive costs
     ]
 
@@ -198,40 +206,6 @@ def extract_steuerbuch_urls(messages: list) -> list[str]:
             urls.extend(m.strip() for m in matches)
     return list(dict.fromkeys(urls))
 
-# Implementation für das UI
-def start_ui():
-    st.title("Steuer-Assistenz")
-    """
-    # Initialize chat history -> create list if not crated yet
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    with st.chat_message("assistant"):
-        st.write("Hallo, ich bin Tax, dein Steuerassistent 👋\n Ich beantworte deine Zürcher Steuerfragen")
-
-    # load all previous chats if rerun
-    # Display chat messages from history on app rerun
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # React to user input
-    if prompt := st.chat_input("Wie kann ich helfen?"):
-        # Display user message in chat message container
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        # Add user message to chat history
-        st.session_state.messages.append({"role": "user", "content": prompt})
-
-        response = f"Echo: {prompt}"
-        # Display assistant response in chat message container
-        with st.chat_message("assistant"):
-            st.markdown(response)
-        # Add assistant response to chat history
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        """
-
-
 def get_agent_response(query, vector_store, chat_history):
     # Agent und Tool erstellen (idealerweise außerhalb oder gecached)
     agent = create_agent()
@@ -249,18 +223,22 @@ def get_agent_response(query, vector_store, chat_history):
     result = agent.invoke({"messages": messages})
     return result, rag_context
 
-
 def start_agent(vector_store: Chroma):
     st.title("Steuer-Assistenz")
     st.info("Die Antworten stellen keine rechtsverbindliche Auskunft dar und können Fehler enthalten und kantonal variieren. Es wird keinerlei Haftung übernommen.", icon="🚨", width="stretch")
 
-    # 1. Session State initialisieren
+    #load logout button
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.rerun()
+
+    # 1. Session State initialisieren (global)
     if "messages" not in st.session_state:
         st.session_state.messages = []  # Liste aus Dictionaries für UI
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []  # Liste aus Message-Objekten für Agent
 
-    # 2. Historie anzeigen
+    # 2. Chat Verlauf laden, wenn noch nicht vorhanden
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -276,21 +254,30 @@ def start_agent(vector_store: Chroma):
         # 4. Logik ausführen
         with st.chat_message("assistant"):
             with st.spinner("Ich durchsuche die Steuergesetze..."):
-                result, rag_context = get_agent_response(
-                    prompt,
-                    vector_store,
-                    st.session_state.chat_history
-                )
-                answer = result["messages"][-1].content
+                try:
+                    result, rag_context = get_agent_response(
+                        prompt,
+                        vector_store,
+                        st.session_state.chat_history
+                    )
+                    answer = result["messages"][-1].content
+                #Falls TopicGuardRailMiddleWare ausgelöst wird
+                except ValueError as e:
+                    answer = str(e)
+                    rag_context = ""
+                    result = None
+
+                # ✅ Ausserhalb des Spinners
                 st.markdown(answer)
 
                 # Lokale Quellen aus RAG anzeigen
                 local_sources = extract_local_sources(rag_context)
-                steuerbuch_urls = extract_steuerbuch_urls(result["messages"])
-                if local_sources:
-                    st.caption(f"Quellen: \n\n {', '.join(local_sources)}")
-                if steuerbuch_urls:
-                    st.caption("Steuerbuch-Quellen: \n\n " + " · ".join(steuerbuch_urls))
+                steuerbuch_urls = extract_steuerbuch_urls(result["messages"] if result else [])
+                with st.expander("Quellen"):
+                    if local_sources:
+                        st.caption(f"Quellen: \n\n {', '.join(local_sources)}")
+                    if steuerbuch_urls:
+                        st.caption("Steuerbuch-Quellen: \n\n " + " · ".join(steuerbuch_urls))
 
 
         # 5. Historie aktualisieren
@@ -299,6 +286,28 @@ def start_agent(vector_store: Chroma):
             HumanMessage(content=prompt),
             AIMessage(content=answer),
         ])
+
+def start_authentication(vector_store):
+    #initialisiere session_state.authenticated
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+
+    # Credentials aus secrets.toml laden
+    if not st.session_state.authenticated:
+        st.title("🔐 Login")
+        username = st.text_input("Benutzername", type="default")
+        password = st.text_input("Passwort", type="password")
+
+        if st.button("Login"):
+            if (username == st.secrets["credentials"]["username"] and
+                    password == st.secrets["credentials"]["password"]):
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Falscher Benutzername oder Passwort")
+        return
+    # Wenn Login gut, lade agent
+    start_agent(vector_store)
 
 def main():
     # create Vector Store with Embeddings (_ ist die Python-Konvention für "wird nicht gebraucht)
@@ -314,7 +323,8 @@ def main():
 
     #run_evaluation(vector_store)
     #run_agent_evaluation(vector_store, get_agent_response)
-    start_agent(vector_store)
+    #start_agent(vector_store)
+    start_authentication(vector_store)
 
 
 if __name__ == "__main__":
