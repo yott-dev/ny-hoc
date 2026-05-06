@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage
 classifier_llm = init_chat_model(
     "gpt-4o-mini",
     model_provider="openai",
-    max_tokens=10,
+    max_tokens=3,
     temperature=0
 )
 

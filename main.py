@@ -15,24 +15,20 @@ from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_chroma import Chroma
 from langchain.agents import create_agent as lc_create_agent
 
-#----RAGAS-----
-from evals.ragas_eval import run_evaluation, run_agent_evaluation
+#-----langfuse------
+from observability import get_langfuse_handler
 
 #----Tools-----
 from tools import search_steuerbuch, create_local_search_tool
 
-#-----ui-------
+#------ui-------
 import streamlit as st
 
-#------logging, monitoring------
-from langchain_core.globals import set_verbose, set_debug
-
-#-----middleware------
+#------middleware------
 from langchain.agents.middleware import PIIMiddleware
 
 #---- custom middleware
 from custom_agents import TopicGuardrailMiddleware
-
 #TODO: eigenes Modell für security überprüfung bezüglich schädlichen Wörtern
 
 # ---> Noah: Für den Agent (mehr Tokens für Reasoning + Tool-Calls)
@@ -141,8 +137,6 @@ def create_agent():
             "email",
             strategy="redact",
             apply_to_input=True,
-            apply_to_output=False,
-            apply_to_tool_results=False
         ),
 
         # Kreditkarten blockieren
@@ -150,7 +144,6 @@ def create_agent():
             "credit_card",
             strategy="block",
             apply_to_input=True,
-            apply_to_output=True,
         ),
         # Against harmful questions related to Weapons, Bombs etc.
         TopicGuardrailMiddleware(),
@@ -220,7 +213,7 @@ def get_agent_response(query, vector_store, chat_history):
     )]
 
     # 3. Agent fragen
-    result = agent.invoke({"messages": messages})
+    result = agent.invoke({"messages": messages}, config={"callbacks": [get_langfuse_handler()]})
     return result, rag_context
 
 def start_agent(vector_store: Chroma):
@@ -267,7 +260,7 @@ def start_agent(vector_store: Chroma):
                     rag_context = ""
                     result = None
 
-                # ✅ Ausserhalb des Spinners
+                # Ausserhalb des Spinners
                 st.markdown(answer)
 
                 # Lokale Quellen aus RAG anzeigen
