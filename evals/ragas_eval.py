@@ -131,7 +131,7 @@ def run_evaluation(vector_store):
         }
 
     results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_v1"))
-    print(results)
+    print(results.to_pandas().to_string())
 
 
 def run_agent_evaluation(vector_store, agent_fn):
@@ -177,7 +177,7 @@ def run_agent_evaluation(vector_store, agent_fn):
         }
 
     results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_agent_v1"))
-    print(results)
+    print(results.to_pandas().to_string())
 
 
 

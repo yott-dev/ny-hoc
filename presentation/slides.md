@@ -7,7 +7,9 @@ drawings:
   persist: false
 transition: slide-left
 mdc: true
+toc: false
 layout: cover
+hideNavigation: true
 background: https://images.unsplash.com/photo-1527095655060-4026c4af2b25?q=80&w=3540&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D
 ---
 
@@ -18,90 +20,74 @@ Hands-on Chatbot · OST FS26
 
 <div class="abs-br m-6 text-sm opacity-60">Yannick Ott <br>Noah Debbabi</div>
 
----
-layout: section
----
-
-# 1. Motivation und Problemstellung
 
 ---
 
 ## Das Problem
 
-Steuerrecht ist komplex und ändert sich laufend.
+<br><br><br><br>
+<v-clicks>
 
-- Bürger und KMUs finden in PDFs, Kreisschreiben und dem Züricher Steuerbuch kaum schnell präzise Antworten
-- Ein LLM alleine **halluziniert** zu leicht bei Rechtsfragen
-- Quellen fehlen — man weiss nicht, worauf sich die Antwort stützt
+- Bei Steuerfragen findet man kaum schnell präzise Antworten (grosse Datenmenge)
+- Bei einem LLM ohne RAG fehlen die Quellangaben
+- Steuerrecht ist komplex und ändert sich laufend.
+
+</v-clicks>
 
 ---
 
 ## Unser Ziel
 
-Ein Chatbot der Fragen zu Züricher Steuerrecht beantwortet:
+<br><br>
 
+**Ein Chatbot der Fragen zu Züricher Steuerrecht beantwortet.**
+<br><br>
 <v-clicks>
 
-- **Quellenbasiert** — jede Antwort mit Dokumentenangabe
-- **Transparent** — Seite, Abschnitt und URL sichtbar
-- **Aktuell** — greift auf Daten von 2025 zu und live auf das Züricher Steuerbuch
-- **Ohne Halluzinationen** — antwortet nur aus Kontext
+
+- **Quellenbasiert:** jede Antwort mit Dokumentenangabe
+- **Transparent:** Seite, Abschnitt und URL sichtbar
+- **Aktuell:** greift auf Daten von 2025 zu und live auf das Züricher Steuerbuch
+- **Ohne Halluzinationen:** antwortet nur aus Kontext
 
 </v-clicks>
-
-
----
-layout: section
----
-
-# 2. Architektur
 
 ---
 
 ## Gesamtarchitektur
 
-<script setup>
-const archDiagram = `
+<br><br><br><br>
+
+```mermaid
 flowchart LR
-    USER_IN([Benutzer])
+  subgraph RAG["einmaliges Setup"]
+    direction LR
+    PDFs["PDFs"] --> MD["Markdown"]
+    HTML["HTML"] --> MD
+    MD --split_documents--> VStore["create Vector Store\nwith ChromaDB"]
+    VStore --> EMB["OpenAI Embedding\nModell"]
+  end
 
-    subgraph RAG [Schritt 1 - RAG]
-        PDF[PDFs] --> DB
-        HTML[HTML] --> DB
-        EMB[Embedding] --> DB[(ChromaDB)] --> CHUNKS[Top-5 Chunks]
-    end
+  EMB -->|"Chunk + Vektor + Metadaten"| DB[("VS Database")]
 
-    subgraph AGENT [Schritt 2 - LLM-Agent GPT-4o]
-        DEC{Kontext\nausreichend?}
-        ANS[Antwort\naus RAG]
-        TOOL[search_steuerbuch]
-        API[zh.ch API live]
-        DEC -->|Ja| ANS
-        DEC -->|Nein| TOOL --> API --> ANS
-    end
+  S((" ")) --> FRAGE["Frage"]
+  FRAGE --local_search--> DB
+  DB -->|"Kontext"| AGENT["Agent"]
+  AGENT --> DEC{"Reicht lokaler\nKontext?"}
+  DEC --nein--> TOOL["Tool: search_steuerbuch"]
+  TOOL --> LIVE["live Abfrage\nauf zh.ch (API)"]
+  LIVE --> ANS{"Antwort"}
+  DEC --ja--> DIRECT["antwortet direkt\naus RAG"]
+  DIRECT --> ANS
+  ANS --> E((" "))
+```
 
-    USER_OUT([Antwort + Lokale Quellen + Steuerbuch-URLs])
-
-    USER_IN -->|Frage| EMB
-    CHUNKS -->|Lokaler Kontext| DEC
-    ANS --> USER_OUT
-`
-const archOptions = { nodeSpacing: 12, layerSpacing: 18, padding: 12 }
-</script>
-
-<div class="w-full h-72 overflow-hidden flex items-center justify-center">
-  <BeautifulMermaid :diagram="archDiagram" theme="zinc-dark" :options="archOptions" />
-</div>
-
----
-layout: section
----
-
-# 3. Dokumenten-Pipeline
 
 ---
 
 ## Von Rohdokumenten zu Embeddings
+
+<br><br><br><br>
 
 ```mermaid
 flowchart LR
@@ -125,9 +111,9 @@ flowchart LR
 
 ---
 
-## Zwei-Pass Splitting
+## Warum zwei Splitting-Schritte?
 
-**Warum zwei Splitting-Schritte?**
+<br>
 
 <v-clicks>
 
@@ -136,69 +122,54 @@ flowchart LR
 - Jeder Chunk bekommt den Abschnittsnamen als Metadatum
 - Semantisch zusammengehöriger Inhalt bleibt zusammen
 
+</v-clicks>
+<br>
+<v-clicks>
+
 **Pass 2 — RecursiveCharacterTextSplitter**
 - Maximal 750 Zeichen pro Chunk, 150 Überlappung
 - Verhindert zu grosse Chunks die das Kontextfenster sprengen
 - Quell-Metadaten (Datei, Seite, Abschnitt) bleiben erhalten
 
-**Ergebnis:** Quellenangabe zeigt `steuergesetz.pdf (Seite 3, A. Steuerpflicht)`
-
 </v-clicks>
 
----
-layout: section
----
-
-# 4. Agent & Tools
 
 ---
-layout: two-cols
+
+
+## Ergebnis
+<br><br><br><br><br>
+Quellenangabe zeigt für PDFs: 
+<br>
+`steuergesetz.pdf (Seite 3, A. Steuerpflicht)`
+<br><br><br>
+Quellenangabe zeigt für Steuberbuch Webseite: 
+<br>
+`https://www.zh.ch/de/steuern-finanzen/steuern/treuhaender/steuerbuch/steuerbuch-definition/zstb-3-1.html?search=miete`
+
+
+
 ---
 
 ## Warum ein Agent?
 
+<br><br><br>
 Eine klassische RAG-Kette kann nur **lokale Dokumente** befragen.
-
+<br>
 Der Agent kann **selbst entscheiden**:
 - Reichen die lokalen Docs?
 - Soll das Steuerbuch online abgefragt werden?
 
-<br>
+<br><br>
 
 **RAG-first Strategie:**
-RAG wird **immer zuerst** ausgeführt. Der Kontext wird als Pflicht-Basis an den Agent übergeben — er antwortet nie aus dem Gedächtnis.
+RAG wird **immer zuerst** ausgeführt. Der Kontext wird als Pflicht-Basis an den Agent übergeben und er antwortet nie aus dem Gedächtnis.
 
-::right::
-
-## Tool: `search_steuerbuch`
-
-```mermaid
-sequenceDiagram
-    Agent->>zh.ch API: keyword, page, order
-    zh.ch API-->>Agent: JSON mit Einträgen
-    loop Bis zu 10 Seiten
-        Agent->>zh.ch: GET Seiten-URL
-        zh.ch-->>Agent: HTML
-        Agent->>Agent: BeautifulSoup\n→ Klartext
-    end
-    Agent-->>LLM: Titel, ZStB-Nr.\nText, URL
-```
-
-<div class="text-sm opacity-70 mt-4">
-API entdeckt via Chrome DevTools → Network-Tab<br>
-Endpoint: <code>flexdatasearch.zhweb-flexdata.zhweb-cache.json</code>
-</div>
-
----
-layout: section
----
-
-# 5. Halluzinations-Unterdrückung
 
 ---
 
-## Drei Massnahmen
-
+## Halluzinations-Unterdrückung
+<br>
 <v-clicks>
 
 ### 1. RAG-first
@@ -206,7 +177,7 @@ Lokale Dokumente werden bei **jeder** Anfrage vorab geladen und als Kontext mitg
 
 ### 2. System-Prompt
 ```
-"Nutze NUR den mitgegebenen Kontext als Wissensbasis —
+"Nutze NUR den mitgegebenen Kontext als Wissensbasis und
 ergänze NIEMALS aus dem Gedächtnis."
 ```
 
@@ -217,27 +188,15 @@ Wenn keine eindeutige Antwort möglich ist:
 
 </v-clicks>
 
----
-layout: section
----
-
-# 6. Evaluation mit RAGAS
 
 ---
-layout: two-cols
----
 
-## Was ist RAGAS?
 
-**R**etrieval **A**ugmented **G**eneration **As**sessment
+## Evaluation mit RAGAS
 
-- Automatische Qualitätsmessung für RAG-Systeme
-- Generiert ein Testset aus den eigenen Dokumenten
-- Berechnet 5 Metriken vollautomatisch
+<br><br>
 
-::right::
-
-## Die 5 Metriken
+**Die 5 Metriken:**
 
 | Metrik | Misst |
 |---|---|
@@ -248,44 +207,34 @@ layout: two-cols
 | **Context Recall** | Alle relevanten Chunks? |
 
 ---
-layout: section
+
+
+## RAGAS Ergebnisse
+
+
 ---
 
-# 7. Technologie-Stack
+
+## UI mit Streamlit
+
 
 ---
 
-## Verwendete Technologien
 
-<div class="grid grid-cols-2 gap-8 mt-4">
+## Herausforderungen
+<br><br><br>
 
-<div>
+- Komplexität der einzelnen Komponenten verstehen
+- Live Abruf von Daten mit Sortierung nach Relevanz
 
-### Backend & AI
-| Komponente | Technologie |
-|---|---|
-| LLM | GPT-4o (OpenAI) |
-| Agent-Framework | LangChain 1.2 |
-| Embeddings | text-embedding-3-large |
-| Vektordatenbank | ChromaDB (lokal) |
-| Similarity | Cosine Distance |
 
-</div>
+---
 
-<div>
+## Verbesserungspotential
+<br><br><br>
+- Konsitente Antworten zu bekommen (Aufruf vom Tool wird nur selten gemacht)
 
-### Dokumente & Tools
-| Komponente | Technologie |
-|---|---|
-| PDF → Markdown | pymupdf4llm |
-| HTML → Markdown | BeautifulSoup + html2text |
-| Online-Suche | zh.ch JCR-API (custom Tool) |
-| Evaluation | RAGAS |
-| Paketmanager | uv |
 
-</div>
-
-</div>
 
 ---
 layout: center
@@ -313,13 +262,14 @@ class: text-center
 </div>
 
 ---
-layout: end
+layout: cover
+background: https://images.unsplash.com/photo-1527095655060-4026c4af2b25?q=80&w=3540&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D
 ---
 
-# Danke
-
-Fragen?
+# Fragen?
 
 <div class="mt-8 text-sm opacity-60">
-RAG-Chatbot für Züricher Steuerrecht · OST FS26 · Yannick Ott, Noah Debbabi
+RAG-Chatbot für Züricher Steuerrecht · OST FS26
 </div>
+
+<div class="abs-br m-6 text-sm opacity-60">Yannick Ott <br>Noah Debbabi</div>
