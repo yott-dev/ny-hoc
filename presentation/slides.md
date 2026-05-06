@@ -26,13 +26,13 @@ Hands-on Chatbot · OST FS26
 ## Das Problem
 
 <br><br><br><br>
-<v-clicks>
+
 
 - Bei Steuerfragen findet man kaum schnell präzise Antworten (grosse Datenmenge)
 - Bei einem LLM ohne RAG fehlen die Quellangaben
 - Steuerrecht ist komplex und ändert sich laufend.
 
-</v-clicks>
+
 
 ---
 
@@ -42,7 +42,7 @@ Hands-on Chatbot · OST FS26
 
 **Ein Chatbot der Fragen zu Züricher Steuerrecht beantwortet.**
 <br><br>
-<v-clicks>
+
 
 
 - **Quellenbasiert:** jede Antwort mit Dokumentenangabe
@@ -50,11 +50,11 @@ Hands-on Chatbot · OST FS26
 - **Aktuell:** greift auf Daten von 2025 zu und live auf das Züricher Steuerbuch
 - **Ohne Halluzinationen:** antwortet nur aus Kontext
 
-</v-clicks>
+
 
 ---
 
-## Gesamtarchitektur
+## Gesamtarchitektur: Agentic RAG
 
 <br><br><br><br>
 
@@ -68,10 +68,12 @@ flowchart LR
     VStore --> EMB["OpenAI Embedding\nModell"]
   end
 
-  EMB -->|"Chunk + Vektor + Metadaten"| DB[("VS Database")]
+  EMB -->|"Chunk + Vektor + Metadaten"| DB[("ChromaDB")]
 
   S((" ")) --> FRAGE["Frage"]
-  FRAGE --local_search--> DB
+  FRAGE --> FILTER["Middleware (Filter)"]
+  FILTER --ungefährlich (local_search)--> DB
+  FILTER --gefährlich--> ANS
   DB -->|"Kontext"| AGENT["Agent"]
   AGENT --> DEC{"Reicht lokaler\nKontext?"}
   DEC --nein--> TOOL["Tool: search_steuerbuch"]
@@ -115,23 +117,23 @@ flowchart LR
 
 <br>
 
-<v-clicks>
+
 
 **Pass 1 — MarkdownHeaderTextSplitter**
 - Teilt nach `##` Überschriften auf (z.B. *A. Steuerpflicht*)
 - Jeder Chunk bekommt den Abschnittsnamen als Metadatum
 - Semantisch zusammengehöriger Inhalt bleibt zusammen
 
-</v-clicks>
+
 <br>
-<v-clicks>
+
 
 **Pass 2 — RecursiveCharacterTextSplitter**
 - Maximal 750 Zeichen pro Chunk, 150 Überlappung
 - Verhindert zu grosse Chunks die das Kontextfenster sprengen
 - Quell-Metadaten (Datei, Seite, Abschnitt) bleiben erhalten
 
-</v-clicks>
+
 
 
 ---
@@ -170,7 +172,7 @@ RAG wird **immer zuerst** ausgeführt. Der Kontext wird als Pflicht-Basis an den
 
 ## Halluzinations-Unterdrückung
 <br>
-<v-clicks>
+
 
 ### 1. RAG-first
 Lokale Dokumente werden bei **jeder** Anfrage vorab geladen und als Kontext mitgegeben — unabhängig davon ob der Agent sie nutzt.
@@ -186,7 +188,7 @@ Wenn keine eindeutige Antwort möglich ist:
 
 > *"Dazu konnte ich keine eindeutige Antwort finden. Bitte wenden Sie sich an das kantonale Steueramt Zürich."*
 
-</v-clicks>
+
 
 
 ---
@@ -208,14 +210,29 @@ Wenn keine eindeutige Antwort möglich ist:
 
 ---
 
-
 ## RAGAS Ergebnisse
+
+
 
 
 ---
 
 
-## UI mit Streamlit
+## Security und Middleware
+
+```mermaid
+flowchart LR
+  S((" ")) --> FRAGE["Frage"]
+  FRAGE --> FILTER["Middleware (Filter)"]
+  FILTER --ungefährlich (local_search)--> DB
+  DB --> LLM["classifier_llm"]
+  LLM --dynamisch--> ANS["Antwort"]
+  FILTER --gefährlich--> COD["code"]
+  COD --statisch--> ANS["Antwort"]
+  ANS --> E((" ")) 
+
+```
+
 
 
 ---
@@ -226,13 +243,14 @@ Wenn keine eindeutige Antwort möglich ist:
 
 - Komplexität der einzelnen Komponenten verstehen
 - Live Abruf von Daten mit Sortierung nach Relevanz
+- Architektur und Datenstruktur (Aufteilung des Codes) definieren
 
 
 ---
 
-## Verbesserungspotential
+## Zukunftspotential
 <br><br><br>
-- Konsitente Antworten zu bekommen (Aufruf vom Tool wird nur selten gemacht)
+- Konsistente Antworten zu bekommen (Aufruf vom Tool wird nur selten gemacht)
 
 
 
