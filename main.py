@@ -3,17 +3,20 @@ import pymupdf4llm
 import html2text
 from pathlib import Path
 from bs4 import BeautifulSoup
+from pprint import pprint
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain.chat_models import init_chat_model
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from langchain_chroma import Chroma
 from langchain.agents import create_agent as lc_create_agent
+from langchain_core.messages import AIMessageChunk
+from streamlit import session_state
+
+#----evaluations-------
+from evals.ragas_eval import run_evaluation, run_agent_evaluation
 
 #-----langfuse------
 from observability import get_langfuse_handler
@@ -28,13 +31,16 @@ import streamlit as st
 from langchain.agents.middleware import PIIMiddleware
 
 #---- custom middleware
-from custom_agents import TopicGuardrailMiddleware
-#TODO: eigenes Modell für security überprüfung bezüglich schädlichen Wörtern
+from custom_agents import TopicGuardrailMiddleware, InformationGuardrailMiddleware
 
 # ---> Noah: Für den Agent (mehr Tokens für Reasoning + Tool-Calls)
 agent_llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
+    max_tokens=300,
+    temperature=0,
+    #for streaming
+    streaming=True
 )
 
 def load_documents() -> list[Document]:
@@ -108,7 +114,6 @@ def create_vector_store_with_embeddings():
             collection_name="example_collection",
             embedding_function=embeddings,
             persist_directory="./chroma_langchain_db",
-            #cosin space
             collection_metadata = {"hnsw:space": "cosine"}
         )
     return vector_store, embeddings
@@ -131,24 +136,9 @@ def create_agent():
         search_steuerbuch,  # zh.ch Steuerbuch online
     ]
     middleware = [
-
-        # E-Mails im Input anonymisieren UND im Output
-        PIIMiddleware(
-            "email",
-            strategy="redact",
-            apply_to_input=True,
-        ),
-
-        # Kreditkarten blockieren
-        PIIMiddleware(
-            "credit_card",
-            strategy="block",
-            apply_to_input=True,
-        ),
         # Against harmful questions related to Weapons, Bombs etc.
         TopicGuardrailMiddleware(),
-
-        #TODO: ModelCallLimitMiddleware -> limits excessive costs
+        #InformationGuardrailMiddleware()
     ]
 
     system_prompt = (
@@ -199,22 +189,48 @@ def extract_steuerbuch_urls(messages: list) -> list[str]:
             urls.extend(m.strip() for m in matches)
     return list(dict.fromkeys(urls))
 
+#neu hinzugefügt werden -> spart ressourcen
+@st.cache_resource(hash_funcs={Chroma: lambda _: None})
+def get_cached_agent(vector_store):
+    return create_agent(), create_local_search_tool(vector_store)
+
+#For run_agent_evaluation purposes
 def get_agent_response(query, vector_store, chat_history):
-    # Agent und Tool erstellen (idealerweise außerhalb oder gecached)
-    agent = create_agent()
-    local_search = create_local_search_tool(vector_store)
-
-    # 1. RAG Kontext holen
+    agent, local_search = get_cached_agent(vector_store)
     rag_context = local_search.invoke({"query": query})
-
-    # 2. Nachrichten für Agent bauen
     messages = chat_history + [HumanMessage(
         content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
     )]
 
-    # 3. Agent fragen
-    result = agent.invoke({"messages": messages}, config={"callbacks": [get_langfuse_handler()]})
+    result = agent.invoke(
+        {"messages": messages},
+        config={"callbacks": [get_langfuse_handler()]}
+    )
     return result, rag_context
+
+#For UI purposese
+def get_agent_response_stream(query, vector_store, chat_history):
+    agent, local_search = get_cached_agent(vector_store)
+    rag_context = local_search.invoke({"query": query})
+    messages = chat_history + [HumanMessage(
+        content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
+    )]
+
+    def stream_generator():
+        for chunk in agent.stream(
+                {"messages": messages},
+                config={"callbacks": [get_langfuse_handler()]},
+                stream_mode="messages"  # ← Token-by-Token Modus
+        ):
+            if isinstance(chunk, tuple):
+                #for logging
+                message, metadata = chunk
+                pprint(f"Message: {message}\n Metadata: {metadata}")
+                if hasattr(message, "content") and message.content and metadata.get("langgraph_node") == 'model':
+                    if isinstance(message, AIMessageChunk):
+                        yield message.content
+
+    return stream_generator(), rag_context
 
 def start_agent(vector_store: Chroma):
     st.title("Steuer-Assistenz")
@@ -240,37 +256,36 @@ def start_agent(vector_store: Chroma):
     if prompt := st.chat_input("Wie kann ich helfen?", key="main_chat"):
         # User-Eingabe anzeigen & speichern
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar='👤'):
             st.markdown(prompt)
 
 
         # 4. Logik ausführen
-        with st.chat_message("assistant"):
-            with st.spinner("Ich durchsuche die Steuergesetze..."):
-                try:
-                    result, rag_context = get_agent_response(
-                        prompt,
-                        vector_store,
-                        st.session_state.chat_history
-                    )
-                    answer = result["messages"][-1].content
-                #Falls TopicGuardRailMiddleWare ausgelöst wird
-                except ValueError as e:
-                    answer = str(e)
-                    rag_context = ""
-                    result = None
+        with st.chat_message("assistant", avatar='⚖️'):
+            result = None
+            rag_context = ""
 
-                # Ausserhalb des Spinners
+            try:
+                stream, rag_context = get_agent_response_stream(
+                    prompt,
+                    vector_store,
+                    st.session_state.chat_history
+                )
+                answer = st.write_stream(stream)
+            except ValueError as e:
+                answer = str(e)
+                rag_context = ""
+                result = None
                 st.markdown(answer)
 
-                # Lokale Quellen aus RAG anzeigen
-                local_sources = extract_local_sources(rag_context)
-                steuerbuch_urls = extract_steuerbuch_urls(result["messages"] if result else [])
-                with st.expander("Quellen"):
-                    if local_sources:
-                        st.caption(f"Quellen: \n\n {', '.join(local_sources)}")
-                    if steuerbuch_urls:
-                        st.caption("Steuerbuch-Quellen: \n\n " + " · ".join(steuerbuch_urls))
+            # Lokale Quellen aus RAG anzeigen
+            local_sources = extract_local_sources(rag_context)
+            steuerbuch_urls = extract_steuerbuch_urls(result["messages"] if result else [])
+            with st.expander("Quellen"):
+                if local_sources:
+                    st.caption(f"Quellen: \n\n {', '.join(local_sources)}")
+                if steuerbuch_urls:
+                    st.caption("Steuerbuch-Quellen: \n\n " + " · ".join(steuerbuch_urls))
 
 
         # 5. Historie aktualisieren
@@ -287,7 +302,7 @@ def start_authentication(vector_store):
 
     # Credentials aus secrets.toml laden
     if not st.session_state.authenticated:
-        st.title("🔐 Login")
+        st.title("Login")
         username = st.text_input("Benutzername", type="default")
         password = st.text_input("Passwort", type="password")
 
