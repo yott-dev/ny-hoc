@@ -1,9 +1,12 @@
 import requests
 import html2text
-from bs4 import BeautifulSoup
+
 from langchain_core.tools import tool
 from langchain_chroma import Chroma
 from langchain_core.tools import tool
+
+# informationen können von einer webseite als HTML oder XML gescraped werden
+from bs4 import BeautifulSoup
 
 # misst wie ähnlich zwei Texte sind, auch wenn sie nicht exakt übereinstimmen (günstiger als embedding)
 from rapidfuzz import fuzz
@@ -62,10 +65,10 @@ def search_steuerbuch(query: str) -> str:
     """Durchsucht das Zürcher Steuerbuch (zh.ch) — die verbindliche Rechtsquelle für kantonales Steuerrecht.
 
     WANN AUFRUFEN (Pflicht):
-    - Bei jeder Frage zu Zürich-spezifischen Steuerregeln, auch wenn lokale Dokumente vorhanden sind
-    - Bei konkreten Fragen zu Steuersätzen, Fristen, Formularen oder ZStB-Artikelnummern
-    - Wenn der Benutzer explizit nach dem Steuerbuch, zh.ch oder aktuellen kantonalen Regelungen fragt
-    - Bei Zweifeln ob lokale Dokumente aktuell oder vollständig sind
+    - Bei jeder Frage auch wenn lokale Dokumente vorhanden sind
+  
+    QUERY-REGEL (wichtig): Übergib immer nur 1-2 präzise Schlüsselwörter für den übergeordneten Kontext und keine ganzen Sätze.
+    Beispiele: "Homeoffice", "Miete Abzug", "Quellensteuer", "Erbschaft"
 
     THEMEN IM ZÜRCHER STEUERBUCH:
     Steuerpflicht, Steuerbefreiung, Einkommenssteuer, Vermögenssteuer, Abzüge,

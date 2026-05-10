@@ -1,5 +1,7 @@
 import re
 import pymupdf4llm
+from dotenv import load_dotenv
+load_dotenv()
 import html2text
 from pathlib import Path
 from bs4 import BeautifulSoup
@@ -37,7 +39,7 @@ from custom_agents import TopicGuardrailMiddleware, InformationGuardrailMiddlewa
 agent_llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
-    max_tokens=400,
+    max_tokens=500,
     temperature=0,
     #for streaming
     streaming=True
@@ -141,22 +143,21 @@ def create_agent():
     ]
 
     system_prompt = (
-        "Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht. "
-        "Bei widersprüchlichen Informationen zwischen Quellen: \n\n"
-        "Verwende ausschliesslich die Information aus dem Dokument "
-        "mit dem neueren Erscheinungsjahr. Ignoriere ältere Angaben vollständig.\n"
-        "Beantworte alle Fragen auf Deutsch.\n\n"
-        "Dir werden aufbereitete lokale Dokumente als Kontext mitgegeben. "
-        "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n\n"
-        "Rufe das Tool IMMER auf wenn Zweifel bestehen — auch wenn lokale Dokumente vorhanden sind.\n\n"
-        "TOOL-PFLICHT: Rufe search_steuerbuch auf bei:\n"
-        "- Fragen zu Zürich-spezifischen Regelungen, Steuersätzen oder Fristen\n"
-        "- Fragen zu konkreten ZStB-Artikeln oder dem Steuerbuch\n"
-        "- Unklaren oder unvollständigen Antworten aus den lokalen Dokumenten\n"
-        "Rufe das Tool NIE auf wenn die Antwort bereits im Kontext vorhanden ist.\n\n"
-        "Wenn keine eindeutige Antwort möglich ist, antworte: "
-        "'Dazu konnte ich keine eindeutige Antwort finden. "
-        "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n\n"
+    "Du bist ein Steuerberater-Assistent für Züricher Steuerrecht. Antworte auf Deutsch.\n\n"
+
+    "PFLICHT-ABLAUF bei jeder Frage:\n"
+    "1. Rufe immer search_steuerbuch auf ohne Ausnahme.\n"
+    "   Query: nur 1-2 Schlüsselwörter (z.B. 'Homeoffice', 'Quellensteuer', 'Miete abzüge').\n"
+    "2. Kombiniere das Steuerbuch-Ergebnis mit den mitgegebenen lokalen Dokumenten.\n"
+    "3. Bei widersprüchlichen Quellen: bevorzuge das neuere Dokument.\n\n"
+
+    "ANTWORT-REGELN:\n"
+    "- Ergänze NIEMALS aus dem Gedächtnis.\n"
+    "- Gib immer die Quellen an (Datei, Seite oder URL).\n"
+    "- Wenn search_steuerbuch keine Ergebnisse liefert: antworte ausschliesslich aus den lokalen Dokumenten.\n"
+    "- Wenn keine eindeutige Antwort möglich: "
+    "'Dazu konnte ich keine eindeutige Antwort finden. "
+    "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'"
         "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
     )
 
@@ -219,6 +220,8 @@ def get_agent_response_stream(query, vector_store, chat_history):
         content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
     )]
 
+    collected_messages = []  # sammelt alle Messages während dem Stream für URL-Extraktion
+
     def stream_generator():
         for chunk in agent.stream(
                 {"messages": messages},
@@ -228,16 +231,17 @@ def get_agent_response_stream(query, vector_store, chat_history):
             if isinstance(chunk, tuple):
                 #for logging
                 message, metadata = chunk
+                collected_messages.append(message)
                 #pprint(f"Message: {message}\n Metadata: {metadata}")
                 if hasattr(message, "content") and message.content and metadata.get("langgraph_node") == 'model':
                     if isinstance(message, AIMessageChunk):
                         yield message.content
 
-    return stream_generator(), rag_context
+    return stream_generator(), rag_context, collected_messages
 
 def start_agent(vector_store: Chroma):
     st.title("Steuer-Assistenz")
-    st.info("Die Antworten stellen keine rechtsverbindliche Auskunft dar und können Fehler enthalten und kantonal variieren. Es wird keinerlei Haftung übernommen.", icon="🚨", width="stretch")
+    st.info("Die Antworten stellen keine rechtsverbindliche Auskunft dar und können Fehler enthalten und kantonal variieren. Es wird keinerlei Haftung übernommen.", width="stretch")
 
     #load logout button
     if st.sidebar.button("Logout"):
@@ -269,7 +273,7 @@ def start_agent(vector_store: Chroma):
             rag_context = ""
 
             try:
-                stream, rag_context = get_agent_response_stream(
+                stream, rag_context, collected_messages = get_agent_response_stream(
                     prompt,
                     vector_store,
                     st.session_state.chat_history
@@ -278,17 +282,17 @@ def start_agent(vector_store: Chroma):
             except ValueError as e:
                 answer = str(e)
                 rag_context = ""
-                result = None
+                collected_messages = []
                 st.markdown(answer)
 
             # Lokale Quellen aus RAG anzeigen
             local_sources = extract_local_sources(rag_context)
-            steuerbuch_urls = extract_steuerbuch_urls(result["messages"] if result else [])
+            steuerbuch_urls = extract_steuerbuch_urls(collected_messages)
             with st.expander("Quellen"):
                 if local_sources:
-                    st.caption(f"Quellen: \n\n {', '.join(local_sources)}")
+                    st.caption("**Lokale Quellen:**\n\n" + "\n\n".join(f"• {s}" for s in local_sources))
                 if steuerbuch_urls:
-                    st.caption("Steuerbuch-Quellen: \n\n " + " · ".join(steuerbuch_urls))
+                    st.caption("**Steuerbuch-Quellen:**\n\n" + "\n\n".join(f"• {u}" for u in steuerbuch_urls))
 
 
         # 5. Historie aktualisieren
@@ -333,7 +337,7 @@ def main():
         load_documents_into_vector_store(vector_store, chunks)
 
     #run_evaluation(vector_store)
-    run_agent_evaluation(vector_store, get_agent_response)
+    #run_agent_evaluation(vector_store, get_agent_response)
     #start_agent(vector_store)
     start_authentication(vector_store)
 
