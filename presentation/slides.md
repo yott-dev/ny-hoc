@@ -13,8 +13,8 @@ hideNavigation: true
 background: https://images.unsplash.com/photo-1527095655060-4026c4af2b25?q=80&w=3540&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D
 ---
 
-# RAG-Chatbot
-## Züricher Steuerrecht
+# <b> RAG-Chatbot </b>
+## Zürcher Steuerrecht
 
 Hands-on Chatbot · OST FS26
 
@@ -177,11 +177,14 @@ RAG wird **immer zuerst** ausgeführt. Der Kontext wird als Pflicht-Basis an den
 ### 1. RAG-first
 Lokale Dokumente werden bei **jeder** Anfrage vorab geladen und als Kontext mitgegeben — unabhängig davon ob der Agent sie nutzt.
 
+<br>
+
 ### 2. System-Prompt
 ```
 "Nutze NUR den mitgegebenen Kontext als Wissensbasis und
 ergänze NIEMALS aus dem Gedächtnis."
 ```
+<br>
 
 ### 3. Expliziter Fallback
 Wenn keine eindeutige Antwort möglich ist:
@@ -193,70 +196,70 @@ Wenn keine eindeutige Antwort möglich ist:
 
 ---
 
-
 ## Evaluation mit RAGAS
 
-<br><br>
+<br>
 
-**Die 5 Metriken:**
-
-| Metrik | Misst |
-|---|---|
-| **Answer Accuracy** | Korrektheit der Antwort |
-| **Faithfulness** | Antwortet nur aus Kontext? |
-| **Answer Relevancy** | Beantwortet die Frage? |
-| **Context Precision** | Richtige Chunks gefunden? |
-| **Context Recall** | Alle relevanten Chunks? |
-
----
-
-## RAGAS Ergebnisse
-
-
-
+| Metrik | Beschreibung               | RAG  | Agentic RAG |
+|---|----------------------------|------|-------------|
+| **Answer Accuracy** | Korrektheit der Antwort    | 0.48 | 0.43        |
+| **Faithfulness** | Antwortet nur aus Kontext? | 0.92 | 0.85        |
+| **Answer Relevancy** | Beantwortet die Frage?     | 0.86 | 0.64          |
+| **Context Precision** | Richtige Chunks gefunden?  | 0.74 | 0.71          |
+| **Context Recall** | Alle relevanten Chunks?    | 0.84 | 0.59          |
 
 ---
 
 
-## Security und Middleware
+## Kontrollpunkte (Security, Middleware, LLM, Input)
+<br>
 
 ```mermaid
+
 flowchart LR
-  S((" ")) --> FRAGE["Frage"]
+  S((" ")) --> AUTH["Authentication"]
+  AUTH --> FRAGE["Frage"]
   FRAGE --> FILTER["Middleware (Filter)"]
   FILTER --ungefährlich (local_search)--> DB
-  DB --> LLM["classifier_llm"]
-  LLM --dynamisch--> ANS["Antwort"]
-  FILTER --gefährlich--> COD["code"]
+  DB --dynamisch--> ANS["Antwort"]
+  FILTER --gefährlich--> COD["Code"]
   COD --statisch--> ANS["Antwort"]
-  ANS --> E((" ")) 
-
+  ANS --> E((" "))
 ```
 
-
+| Kontrollsegmente   | Beschreibung                                   |
+|--------------------|------------------------------------------------|
+| **Authentication** | Login für den User                             |
+| **LLM-as-a-Guard** | Middleware (Überprüfung prompt)                |
+| **Output Control** | LLM-Spezifikation wie llm, tokens, temperature |
+| **Langfuse**       | Überwachung der LLM calls                      |
 
 ---
 
 
 ## Herausforderungen
-<br><br><br>
+<br>
 
 - Komplexität der einzelnen Komponenten verstehen
 - Live Abruf von Daten mit Sortierung nach Relevanz
 - Architektur und Datenstruktur (Aufteilung des Codes) definieren
 
-
----
+<br><br>
 
 ## Zukunftspotential
-<br><br><br>
-- Konsistente Antworten zu bekommen (Aufruf vom Tool wird nur selten gemacht)
 
+<br>
+
+- Answer Accuracy bei 0.48
+- Konsistente Antworten zu bekommen (Aufruf vom Tool wird nur selten gemacht)
+- Feature-Erweiterung: Login, UI Elemente, Latenz
+- Optimierung Code-Struktur
 
 
 ---
 layout: center
 class: text-center
+text: 14pt
 ---
 
 # Demo

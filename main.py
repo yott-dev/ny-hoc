@@ -37,7 +37,7 @@ from custom_agents import TopicGuardrailMiddleware, InformationGuardrailMiddlewa
 agent_llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
-    max_tokens=300,
+    max_tokens=400,
     temperature=0,
     #for streaming
     streaming=True
@@ -138,24 +138,34 @@ def create_agent():
     middleware = [
         # Against harmful questions related to Weapons, Bombs etc.
         TopicGuardrailMiddleware(),
-        #InformationGuardrailMiddleware()
     ]
 
     system_prompt = (
         "Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht. "
+        "Bei widersprüchlichen Informationen zwischen Quellen: \n\n"
+        "Verwende ausschliesslich die Information aus dem Dokument "
+        "mit dem neueren Erscheinungsjahr. Ignoriere ältere Angaben vollständig.\n"
         "Beantworte alle Fragen auf Deutsch.\n\n"
         "Dir werden aufbereitete lokale Dokumente als Kontext mitgegeben. "
         "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n\n"
-        "TOOL-PFLICHT: Rufe search_steuerbuch auf bei:\n"
-        "- Fragen zu Zürich-spezifischen Regelungen, Steuersätzen oder Fristen\n"
-        "- Fragen zu konkreten ZStB-Artikeln oder dem Steuerbuch\n"
-        "- Unklaren oder unvollständigen Antworten aus den lokalen Dokumenten\n"
-        "Rufe das Tool IMMER auf wenn Zweifel bestehen — auch wenn lokale Dokumente vorhanden sind.\n\n"
+        "TOOL-REGEL: Folge dieser strikten Reihenfolge:\n"
+        "1. Prüfe zuerst die mitgegebenen lokalen Dokumente\n"
+        "2. Wenn die Antwort dort klar und vollständig ist → antworte DIREKT, kein Tool\n"
+        "3. Rufe search_steuerbuch NUR auf wenn:\n"
+        "4. Die lokalen Dokumente keine Antwort enthalten\n"
+        "5. Explizit nach einem ZStB-Artikel gefragt wird\n"
+        "6. Die Frage einen Sachverhalt betrifft der NICHT im Kontext steht\n"
+        "Rufe das Tool NIE auf wenn die Antwort bereits im Kontext vorhanden ist.\n\n"
         "Wenn keine eindeutige Antwort möglich ist, antworte: "
         "'Dazu konnte ich keine eindeutige Antwort finden. "
         "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n\n"
         "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
     )
+    #"Rufe das Tool IMMER auf wenn Zweifel bestehen — auch wenn lokale Dokumente vorhanden sind.\n\n"
+    #"TOOL-PFLICHT: Rufe search_steuerbuch auf bei:\n"
+    #"- Fragen zu Zürich-spezifischen Regelungen, Steuersätzen oder Fristen\n"
+    #"- Fragen zu konkreten ZStB-Artikeln oder dem Steuerbuch\n"
+    #"- Unklaren oder unvollständigen Antworten aus den lokalen Dokumenten\n"
 
     # lc_create_agent baut den kompletten Agent-Loop intern auf
     return lc_create_agent(agent_llm, tools, middleware=middleware, system_prompt=system_prompt, debug=False)
@@ -225,7 +235,7 @@ def get_agent_response_stream(query, vector_store, chat_history):
             if isinstance(chunk, tuple):
                 #for logging
                 message, metadata = chunk
-                pprint(f"Message: {message}\n Metadata: {metadata}")
+                #pprint(f"Message: {message}\n Metadata: {metadata}")
                 if hasattr(message, "content") and message.content and metadata.get("langgraph_node") == 'model':
                     if isinstance(message, AIMessageChunk):
                         yield message.content
@@ -330,7 +340,7 @@ def main():
         load_documents_into_vector_store(vector_store, chunks)
 
     #run_evaluation(vector_store)
-    #run_agent_evaluation(vector_store, get_agent_response)
+    run_agent_evaluation(vector_store, get_agent_response)
     #start_agent(vector_store)
     start_authentication(vector_store)
 

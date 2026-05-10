@@ -36,12 +36,18 @@ def ask_chatbot(query: str, vector_store: Chroma, llm):
     contexts = [doc.page_content for doc in retrieve_data]
     # Prompt / chain begins
     # Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...
-    template = """Du bist ein hilfsbereiter Assistent für Steuerberatung. Nutze NUR den folgenden Kontext,
-    um die Frage zu beantworten".
-    Kontext:
-    {context}
-    Frage: {question}
-    """
+    template = ("Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht.\n "
+                "Bei widersprüchlichen Informationen: Priorisiere Dokumente mit neuerem Jahr"
+                "Beantworte alle Fragen auf Deutsch.\n\n"
+                "Dir werden aufbereitete lokale Dokumente als Kontext mitgegeben. "
+                "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n\n"
+                "Rufe das Tool IMMER auf wenn Zweifel bestehen — auch wenn lokale Dokumente vorhanden sind.\n\n"
+                "Wenn keine eindeutige Antwort möglich ist, antworte: "
+                "'Dazu konnte ich keine eindeutige Antwort finden. "
+                "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n\n"
+                "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
+                "Kontext: {context}"
+                "Frage: {question}")
     prompt = ChatPromptTemplate.from_template(template)
     rag_chain = (
             {"context": retriever, "question": RunnablePassthrough()}
@@ -130,7 +136,7 @@ def run_evaluation(vector_store):
             "context_recall": recall.value,
         }
 
-    results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_v1"))
+    results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_v"))
     print(results.to_pandas().to_string())
 
 
@@ -147,6 +153,9 @@ def run_agent_evaluation(vector_store, agent_fn):
     # Alle Metriken initialisieren
     answer_accuracy = AnswerAccuracy(llm=llm)
     faithfulness = Faithfulness(llm=llm)
+    answer_relevancy = AnswerRelevancy(llm=llm, embeddings=embeddings)
+    context_precision = ContextPrecision(llm=llm)
+    context_recall = ContextRecall(llm=llm)
 
     dataset = load_dataset()
 
@@ -155,18 +164,17 @@ def run_agent_evaluation(vector_store, agent_fn):
         result, rag_context = agent_fn(row["user_input"], vector_store, [])
         answer = result["messages"][-1].content
 
-        # RAG-Chunks aus dem formatierten String rausschneiden
         rag_chunks = [block.strip() for block in rag_context.split("\n\n") if block.strip()]
-
-        # Tool-Texte aus ToolMessages extrahieren
         tool_texts = [msg.content for msg in result["messages"] if isinstance(msg, ToolMessage)]
-
         contexts = rag_chunks + tool_texts
 
-        # Alle Metriken parallel berechnen
-        accuracy, faith = await asyncio.gather(
+        # Alle 5 Variablen korrekt unpacken
+        accuracy, faith, relevancy, precision, recall = await asyncio.gather(
             answer_accuracy.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
             faithfulness.ascore(user_input=row["user_input"], response=answer, retrieved_contexts=contexts),
+            answer_relevancy.ascore(user_input=row["user_input"], response=answer),
+            context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
+            context_recall.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
         )
 
         return {
@@ -174,9 +182,11 @@ def run_agent_evaluation(vector_store, agent_fn):
             "response": answer,
             "answer_accuracy": accuracy.value,
             "faithfulness": faith.value,
+            "answer_relevancy": relevancy.value,
+            "context_precision": precision.value,
+            "context_recall": recall.value,
         }
-
-    results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_agent_v1"))
+    results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_agent_v"))
     print(results.to_pandas().to_string())
 
 
