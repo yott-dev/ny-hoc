@@ -1,0 +1,51 @@
+Kategorie,user_input,reference,Quelle
+Steuerpflicht,Ab wann besteht ein steuerrechtlicher Aufenthalt im Kanton für Erwerbstätige?,Bei Ausübung einer Erwerbstätigkeit nach mindestens 30 Tagen Aufenthalt.,§ 3 Abs. 3 StG
+Steuerpflicht,Ab wann besteht ein steuerrechtlicher Aufenthalt ohne Erwerbstätigkeit?,Nach mindestens 90 Tagen Aufenthalt im Kanton.,§ 3 Abs. 3 StG
+Steuerpflicht,Wann beginnt die Steuerpflicht im Kanton?,"Mit dem Zeitpunkt, in welchem der Steuerpflichtige im Kanton steuerrechtlichen Wohnsitz oder Aufenthalt nimmt oder im Kanton steuerbare Werte erwirbt.",§ 10 Abs. 1 StG
+Steuerpflicht,Wann endet die Steuerpflicht?,"Mit dem Tod, dem Wegzug aus dem Kanton oder mit dem Wegfall der im Kanton steuerbaren Werte.",§ 10 Abs. 2 StG
+Steuerpflicht,Wie werden Ehegatten in ungetrennter Ehe besteuert?,Einkommen und Vermögen der Ehegatten in rechtlich und tatsächlich ungetrennter Ehe werden zusammengerechnet.,§ 7 Abs. 1 StG
+Steuerpflicht,Wie werden Ehegatten bei Scheidung oder Trennung besteuert?,Bei Scheidung oder rechtlicher bzw. tatsächlicher Trennung werden die Ehegatten für die gesamte Steuerperiode getrennt besteuert.,§ 52 Abs. 3 StG
+Steuerpflicht,Wann werden Kinder selbstständig eingeschätzt?,"Erstmals für die Steuerperiode, in der sie volljährig werden.",§ 52 Abs. 1 StG
+Einkommen,Sind Kapitalgewinne aus der Veräusserung von Privatvermögen steuerpflichtig?,"Nein, Kapitalgewinne aus der Veräusserung von Privatvermögen sind steuerfrei. Vorbehalten bleibt die Grundstückgewinnsteuer.",§ 16 Abs. 3 StG
+Einkommen,Sind Trinkgelder steuerpflichtig?,"Ja, Trinkgelder gehören zu den steuerbaren Einkünften aus unselbstständiger Erwerbstätigkeit.",§ 17 Abs. 1 StG
+Einkommen,Sind vom Arbeitgeber getragene Weiterbildungskosten steuerbar?,"Nein, vom Arbeitgeber getragene Kosten der berufsorientierten Aus- und Weiterbildung stellen keinen geldwerten Vorteil dar.",§ 17 Abs. 2 StG
+Einkommen,Wie werden Leibrenten besteuert?,Leibrenten sowie Einkünfte aus Verpfründung sind zu 40 Prozent steuerbar.,§ 22 Abs. 3 StG
+Einkommen,Sind Lottogewinne über Fr. 1000 steuerpflichtig?,"Ja, einzelne Gewinne von über Fr. 1000 aus einer Lotterie oder lotterieähnlichen Veranstaltung sind steuerbar.",§ 23 lit. e StG
+Einkommen,Sind Erbschaften einkommenssteuerpflichtig?,"Nein, Vermögensanfall infolge Erbschaft, Vermächtnis oder Schenkung unterliegt nicht der Einkommenssteuer.",§ 24 lit. a StG
+Einkommen,Ist der Sold der Milizfeuerwehr steuerfrei?,"Ja, der Sold der Milizfeuerwehr ist bis zu Fr. 8000 jährlich für Kernaufgaben steuerfrei.",§ 24 lit. g StG
+Einkommen,Sind Militärdienstleistungen steuerfrei?,"Ja, der Sold für Militär- und Schutzdienst sowie das Taschengeld für Zivildienst sind steuerfrei.",§ 24 lit. f StG
+Einkommen,Sind Unterhaltsbeiträge nach Scheidung steuerpflichtig?,"Ja, Unterhaltsbeiträge, die ein Steuerpflichtiger bei Scheidung für sich erhält, sind steuerbar.",§ 23 lit. f StG
+Abzüge,Wie hoch ist der maximale Fahrtkostenabzug zwischen Wohn- und Arbeitsstätte?,Die notwendigen Kosten bis zu einem Höchstbetrag von Fr. 5000.,§ 26 Abs. 1 lit. a StG
+Abzüge,Wie hoch ist der maximale Abzug für Aus- und Weiterbildungskosten?,"Bis zu Fr. 12'000, sofern ein erster Abschluss auf der Sekundarstufe II vorliegt oder das 20. Lebensjahr vollendet ist.",§ 31 Abs. 1 lit. k StG
+Abzüge,Wie hoch ist der Kinderabzug pro Kind?,Fr. 9000 pro minderjähriges Kind unter elterlicher Sorge oder in beruflicher Erstausbildung.,§ 34 Abs. 1 lit. a StG
+Abzüge,Wie hoch ist der Unterstützungsabzug für erwerbsunfähige Personen?,Fr. 2700 pro erwerbsunfähige oder beschränkt erwerbsfähige Person.,§ 34 Abs. 1 lit. b StG
+Abzüge,Wie hoch ist der Abzug für Drittbetreuungskosten von Kindern?,"Höchstens Fr. 10'100 pro Kind unter 14 Jahren, wenn in direktem Zusammenhang mit der Erwerbstätigkeit.",§ 31 Abs. 1 lit. j StG
+Abzüge,Wie hoch ist der Abzug für Versicherungsprämien für verheiratete Steuerpflichtige?,Fr. 5200 für in ungetrennter Ehe lebende Steuerpflichtige.,§ 31 Abs. 1 lit. g StG
+Abzüge,Können Krankheitskosten abgezogen werden?,"Ja, soweit der Steuerpflichtige die Kosten selber trägt und diese 5 Prozent der steuerbaren Einkünfte übersteigen.",§ 32 lit. a StG
+Steuertarife,Ab welchem Einkommen wird der Höchststeuersatz von 13% bei natürlichen Personen (Grundtarif) angewendet?,Für Einkommensteile über Fr. 254'900.,§ 35 Abs. 1 StG
+Steuertarife,Ab welchem Einkommen wird der Höchststeuersatz von 13% beim Verheiratetentarif angewendet?,Für Einkommensteile über Fr. 354'100.,§ 35 Abs. 2 StG
+Steuertarife,Wie hoch ist die Kapitalsteuer für Kapitalgesellschaften?,"0,75 Promille des steuerbaren Eigenkapitals.",§ 82 Abs. 1 StG
+Steuertarife,Wie hoch ist die Gewinnsteuer für Kapitalgesellschaften und Genossenschaften?,8 Prozent des steuerbaren Reingewinns.,§ 71 StG
+Steuertarife,Wie hoch ist die Personalsteuer?,Fr. 24.,§ 200 StG
+Vermögen,Was unterliegt der Vermögenssteuer?,Das gesamte Reinvermögen.,§ 38 Abs. 1 StG
+Vermögen,Werden Hausrat und persönliche Gebrauchsgegenstände besteuert?,"Nein, Hausrat und persönliche Gebrauchsgegenstände werden nicht besteuert.",§ 38 Abs. 4 StG
+Vermögen,Wie wird das Vermögen bewertet?,Das Vermögen wird zum Verkehrswert bewertet.,§ 39 Abs. 1 StG
+Vermögen,Ab welchem Vermögen beginnt die Vermögenssteuer (Grundtarif)?,Ab Fr. 77'001 (die ersten Fr. 77'000 sind steuerfrei).,§ 47 Abs. 1 StG
+Selbstständige,Müssen Selbstständige einen Jahresabschluss erstellen?,"Ja, in jeder Steuerperiode und am Ende der Steuerpflicht, ausser die Tätigkeit wurde erst im letzten Quartal aufgenommen.",§ 50 Abs. 3 StG
+Selbstständige,Wie lange müssen Selbstständige Belege aufbewahren?,Während zehn Jahren.,§ 135 Abs. 3 StG
+Selbstständige,Können Verluste aus den Vorjahren abgezogen werden?,"Ja, Verluste aus den sieben vorangegangenen Geschäftsjahren können abgezogen werden.",§ 29 Abs. 1 StG
+Verfahren,Wie lange ist die Einsprachefrist gegen einen Einschätzungsentscheid?,30 Tage nach Zustellung beim kantonalen Steueramt.,§ 140 Abs. 1 StG
+Verfahren,Wer nimmt die Einschätzung vor?,Das kantonale Steueramt.,§ 107 Abs. 1 StG
+Verfahren,"Wann verjährt das Recht, eine Steuer zu veranlagen?","Fünf Jahre nach Ablauf der Steuerperiode, auf jeden Fall nach 15 Jahren.",§ 130 Abs. 1 und 4 StG
+Verfahren,Wie lange ist die Rekursfrist gegen einen Einspracheentscheid?,30 Tage nach Zustellung beim Steuerrekursgericht.,§ 147 Abs. 1 StG
+Verfahren,Wann verjähren Steuerforderungen nach rechtskräftiger Einschätzung?,"Fünf Jahre, nachdem die Einschätzung rechtskräftig geworden ist.",§ 131 Abs. 1 StG
+Verfahren,Kann eine Einschätzung nach pflichtgemässem Ermessen angefochten werden?,Nur wegen offensichtlicher Unrichtigkeit; die Einsprache muss begründet sein.,§ 140 Abs. 2 StG
+Steuerstrafrecht,Wie hoch ist die Busse bei vollendeter Steuerhinterziehung?,"In der Regel das Einfache der hinterzogenen Steuer; bei leichtem Verschulden bis ein Drittel, bei schwerem bis das Dreifache.",§ 235 Abs. 2 StG
+Steuerstrafrecht,Wann ist eine straflose Selbstanzeige möglich?,"Wenn die Hinterziehung keiner Steuerbehörde bekannt ist, die Person vorbehaltlos kooperiert und sich um Bezahlung der Nachsteuer bemüht.",§ 235 Abs. 3 StG
+Steuerstrafrecht,Wann verjährt die Strafverfolgung wegen vollendeter Steuerhinterziehung?,Zehn Jahre nach Ablauf der betreffenden Steuerperiode.,§ 242 Abs. 2 StG
+Grundstückgewinnsteuer,Wer ist bei der Grundstückgewinnsteuer steuerpflichtig?,Der Veräusserer.,§ 217 StG
+Grundstückgewinnsteuer,Wird die Grundstückgewinnsteuer bei Erbgang aufgeschoben?,"Ja, die Grundstückgewinnsteuer wird bei Eigentumswechsel durch Erbgang aufgeschoben.",§ 216 Abs. 3 lit. a StG
+Grundstückgewinnsteuer,Ab welchem Grundstückgewinn wird keine Steuer erhoben?,Grundstückgewinne unter Fr. 5000 werden nicht besteuert.,§ 225 Abs. 5 StG
+Grundstückgewinnsteuer,Wie verändert sich die Grundstückgewinnsteuer bei einer Besitzesdauer unter einem Jahr?,Sie erhöht sich um 50 Prozent.,§ 225 Abs. 2 StG
+Grundstückgewinnsteuer,Wie verändert sich die Grundstückgewinnsteuer bei einer Besitzesdauer von 20 Jahren?,Sie ermässigt sich um 50 Prozent.,§ 225 Abs. 3 StG
+Quellensteuer,Wie hoch ist die Quellensteuer für im Ausland wohnhafte Verwaltungsräte?,Die Steuer beträgt 20 Prozent der Bruttoeinkünfte.,§ 96 Abs. 3 StG
