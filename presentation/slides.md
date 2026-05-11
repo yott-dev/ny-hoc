@@ -175,7 +175,7 @@ Quellenangabe zeigt für Steuerbuch Webseite:
 ## <b> <h1 class="text-emerald-600"> Warum ein Agent? </h1> </b>
 
 <br><br><br>
-Eine klassische RAG-Kette kann nur **lokale Dokumente** befragen.
+Eine klassische RAG-Kette kann nur lokale Dokumente befragen.
 <br>
 Der Agent kann **selbst entscheiden**:
 - Genügen die lokalen Docs?
@@ -194,7 +194,7 @@ RAG wird **immer zuerst** ausgeführt. Der Kontext wird als Pflicht-Basis an den
 
 
 ### 1. RAG-first
-Lokale Dokumente werden bei **jeder** Anfrage vorab geladen und als Kontext mitgegeben — unabhängig davon ob der Agent sie nutzt.
+Lokale Dokumente werden bei jeder Anfrage vorab geladen und als Kontext mitgegeben, unabhängig davon ob der Agent sie nutzt.
 
 <br>
 
@@ -202,6 +202,7 @@ Lokale Dokumente werden bei **jeder** Anfrage vorab geladen und als Kontext mitg
 ```
 "Nutze NUR den mitgegebenen Kontext als Wissensbasis und ergänze NIEMALS aus dem Gedächtnis."
 ```
+
 <br>
 
 ### 3. Expliziter Fallback 
@@ -254,21 +255,21 @@ flowchart LR
 
 ---
 
-# <b> <h1 class="text-emerald-600"> Demo </h1> </b>
+# <b> <h1 class="text-emerald-600"> Live-Demo </h1> </b>
 
-*Live-Demonstration*
+<br>
 
 <div class="grid grid-cols-2 gap-8 mt-8 text-left">
 
 <div class="border rounded p-4">
 <div class="font-bold mb-2">Frage 1 — nur lokale Docs</div>
-<div class="text-sm opacity-70">"Ab wann bin ich in Zürich steuerpflichtig?"</div>
+<div class="text-sm opacity-70">"Muss ich meinen Lottogewinn versteurn?"</div>
 <div class="text-xs mt-2 opacity-50">→ zeigt Quellenangabe mit Seite + Abschnitt</div>
 </div>
 
 <div class="border rounded p-4">
 <div class="font-bold mb-2">Frage 2 — Steuerbuch-Tool</div>
-<div class="text-sm opacity-70">"Was gilt für die Besteuerung von Homeoffice-Abzügen?"</div>
+<div class="text-sm opacity-70">"Kann ich meine Miete von den Steuern abziehen?"</div>
 <div class="text-xs mt-2 opacity-50">→ triggert search_steuerbuch, zeigt zh.ch URLs</div>
 </div>
 
