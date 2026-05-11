@@ -1,5 +1,6 @@
 ---
 theme: default
+colorSchema: light
 title: RAG-Chatbot für Züricher Steuerrecht
 info: Hands-on Chatbot Projekt – OST FS26
 highlighter: shiki
@@ -11,9 +12,26 @@ toc: false
 layout: cover
 hideNavigation: true
 background: https://images.unsplash.com/photo-1527095655060-4026c4af2b25?q=80&w=3540&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D
+mermaid:
+  theme: test
+  themeVariables:
+    primaryColor: '#f0fdf4'
+    primaryTextColor: '#064e3b'
+    primaryBorderColor: '#059669'
+    lineColor: '#059669'
+    secondaryColor: '#ecfdf5'
+    tertiaryColor: '#f0fdf4'
+    clusterBkg: '#f0fdf4'
+    clusterBorder: '#059669'
+    edgeLabelBackground: '#ffffff'
+    nodeBorder: '#059669'
+    nodeTextColor: '#064e3b'
+    mainBkg: '#f0fdf4'
+    fontFamily: 'ui-sans-serif, system-ui, sans-serif'
+    fontSize: '15px'
 ---
 
-# <b> RAG-Chatbot </b>
+# <b> Agentic-RAG-Chatbot </b>
 ## Zürcher Steuerrecht
 
 Hands-on Chatbot · OST FS26
@@ -23,26 +41,26 @@ Hands-on Chatbot · OST FS26
 
 ---
 
-## Das Problem
+## <b> <h1 class="text-emerald-600">Das Problem </h1></b>
 
-<br><br><br><br>
+<br><br><br>
+
+
 
 
 - Bei Steuerfragen findet man kaum schnell präzise Antworten (grosse Datenmenge)
 - Bei einem LLM ohne RAG fehlen die Quellangaben
-- Steuerrecht ist komplex und ändert sich laufend.
-
+- Steuerrecht ist komplex und ändert sich laufend
 
 
 ---
 
-## Unser Ziel
+## <b> <h1 class="text-emerald-600">Unser Ziel</h1> </b>
 
 <br><br>
 
-**Ein Chatbot der Fragen zu Züricher Steuerrecht beantwortet.**
+**Ein Chatbot der Fragen zu zürcher Steuerrecht beantwortet**
 <br><br>
-
 
 
 - **Quellenbasiert:** jede Antwort mit Dokumentenangabe
@@ -54,11 +72,11 @@ Hands-on Chatbot · OST FS26
 
 ---
 
-## Gesamtarchitektur: Agentic RAG
+## <b> <h1 class="text-emerald-600"> Gesamtarchitektur: Agentic RAG </h1></b>
 
 <br><br><br><br>
 
-```mermaid
+```mermaid {theme: 'dark'}
 flowchart LR
   subgraph RAG["einmaliges Setup"]
     direction LR
@@ -70,7 +88,8 @@ flowchart LR
 
   EMB -->|"Chunk + Vektor + Metadaten"| DB[("ChromaDB")]
 
-  S((" ")) --> FRAGE["Frage"]
+  S((" ")) --> AUTHENTICATION[Authentication]
+  AUTHENTICATION --> FRAGE["Frage"]
   FRAGE --> FILTER["Middleware (Filter)"]
   FILTER --ungefährlich (local_search)--> DB
   FILTER --gefährlich--> ANS
@@ -87,11 +106,11 @@ flowchart LR
 
 ---
 
-## Von Rohdokumenten zu Embeddings
+## <b> <h1 class="text-emerald-600">Von Rohdokumenten zu Embeddings</h1> </b>
 
 <br><br><br><br>
 
-```mermaid
+```mermaid {theme: 'dark'}
 flowchart LR
     subgraph Quellen
         A[PDF\nKreisschreiben\nSteuergesetze]
@@ -113,7 +132,7 @@ flowchart LR
 
 ---
 
-## Warum zwei Splitting-Schritte?
+## <b> <h1 class="text-emerald-600">Warum zwei Splitting-Schritte?</h1> </b>
 
 <br>
 
@@ -139,13 +158,13 @@ flowchart LR
 ---
 
 
-## Ergebnis
-<br><br><br><br><br>
+## <b> <h1 class="text-emerald-600"> Ergebnis </h1> </b>
+<br><br><br>
 Quellenangabe zeigt für PDFs: 
 <br>
 `steuergesetz.pdf (Seite 3, A. Steuerpflicht)`
 <br><br><br>
-Quellenangabe zeigt für Steuberbuch Webseite: 
+Quellenangabe zeigt für Steuerbuch Webseite: 
 <br>
 `https://www.zh.ch/de/steuern-finanzen/steuern/treuhaender/steuerbuch/steuerbuch-definition/zstb-3-1.html?search=miete`
 
@@ -153,13 +172,13 @@ Quellenangabe zeigt für Steuberbuch Webseite:
 
 ---
 
-## Warum ein Agent?
+## <b> <h1 class="text-emerald-600"> Warum ein Agent? </h1> </b>
 
 <br><br><br>
 Eine klassische RAG-Kette kann nur **lokale Dokumente** befragen.
 <br>
 Der Agent kann **selbst entscheiden**:
-- Reichen die lokalen Docs?
+- Genügen die lokalen Docs?
 - Soll das Steuerbuch online abgefragt werden?
 
 <br><br>
@@ -170,7 +189,7 @@ RAG wird **immer zuerst** ausgeführt. Der Kontext wird als Pflicht-Basis an den
 
 ---
 
-## Halluzinations-Unterdrückung
+## <b> <h1 class="text-emerald-600"> Halluzinations-Unterdrückung </h1> </b>
 <br>
 
 
@@ -181,40 +200,39 @@ Lokale Dokumente werden bei **jeder** Anfrage vorab geladen und als Kontext mitg
 
 ### 2. System-Prompt
 ```
-"Nutze NUR den mitgegebenen Kontext als Wissensbasis und
-ergänze NIEMALS aus dem Gedächtnis."
+"Nutze NUR den mitgegebenen Kontext als Wissensbasis und ergänze NIEMALS aus dem Gedächtnis."
 ```
 <br>
 
-### 3. Expliziter Fallback
+### 3. Expliziter Fallback 
 Wenn keine eindeutige Antwort möglich ist:
-
-> *"Dazu konnte ich keine eindeutige Antwort finden. Bitte wenden Sie sich an das kantonale Steueramt Zürich."*
-
+```
+"Dazu konnte ich keine eindeutige Antwort finden. Bitte wenden Sie sich an das kantonale Steueramt Zürich."
+```
 
 
 
 ---
 
-## Evaluation mit RAGAS
+## <b> <h1 class="text-emerald-600"> Evaluation mit RAGAS </h1> </b> 
 
 <br>
 
 | Metrik | Beschreibung               | RAG  | Agentic RAG |
-|---|----------------------------|------|-------------|
-| **Answer Accuracy** | Korrektheit der Antwort    | 0.48 | 0.43        |
-| **Faithfulness** | Antwortet nur aus Kontext? | 0.92 | 0.85        |
-| **Answer Relevancy** | Beantwortet die Frage?     | 0.86 | 0.64          |
-| **Context Precision** | Richtige Chunks gefunden?  | 0.74 | 0.71          |
-| **Context Recall** | Alle relevanten Chunks?    | 0.84 | 0.59          |
+|---|----------------------------|------|------|
+| **Answer Accuracy** | Korrektheit der Antwort    | 0.48 | 0.43 |
+| **Faithfulness** | Antwortet nur aus Kontext? | 0.92 | 0.85 |
+| **Answer Relevancy** | Beantwortet die Frage?     | 0.86 | 0.64 |
+| **Context Precision** | Richtige Chunks gefunden?  | 0.74 | 0.71 |
+| **Context Recall** | Alle relevanten Chunks?    | 0.84 | 0.59 |
 
 ---
 
 
-## Kontrollpunkte (Security, Middleware, LLM, Input)
+## <b> <h1 class="text-emerald-600"> Kontrollpunkte (Security, Middleware, LLM, Input) </h1> </b>
 <br>
 
-```mermaid
+```mermaid {theme: 'dark'}
 
 flowchart LR
   S((" ")) --> AUTH["Authentication"]
@@ -227,42 +245,16 @@ flowchart LR
   ANS --> E((" "))
 ```
 
-| Kontrollsegmente   | Beschreibung                                   |
-|--------------------|------------------------------------------------|
-| **Authentication** | Login für den User                             |
-| **LLM-as-a-Guard** | Middleware (Überprüfung prompt)                |
-| **Output Control** | LLM-Spezifikation wie llm, tokens, temperature |
-| **Langfuse**       | Überwachung der LLM calls                      |
+| Kontrollsegmente   | Beschreibung                             |
+|--------------------|------------------------------------------|
+| **Authentication** | Login für den User                       |
+| **LLM-as-a-Guard** | Middleware (Überprüfung prompt)          |
+| **Output Control** | LLM-Spezifikation wie llm und max_tokens |
+| **Langfuse**       | Überwachung der LLM calls                |
 
 ---
 
-
-## Herausforderungen
-<br>
-
-- Komplexität der einzelnen Komponenten verstehen
-- Live Abruf von Daten mit Sortierung nach Relevanz
-- Architektur und Datenstruktur (Aufteilung des Codes) definieren
-
-<br><br>
-
-## Zukunftspotential
-
-<br>
-
-- Answer Accuracy bei 0.48
-- Konsistente Antworten zu bekommen (Aufruf vom Tool wird nur selten gemacht)
-- Feature-Erweiterung: Login, UI Elemente, Latenz
-- Optimierung Code-Struktur
-
-
----
-layout: center
-class: text-center
-text: 14pt
----
-
-# Demo
+# <b> <h1 class="text-emerald-600"> Demo </h1> </b>
 
 *Live-Demonstration*
 
@@ -283,14 +275,3 @@ text: 14pt
 </div>
 
 ---
-layout: cover
-background: https://images.unsplash.com/photo-1527095655060-4026c4af2b25?q=80&w=3540&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D
----
-
-# Fragen?
-
-<div class="mt-8 text-sm opacity-60">
-RAG-Chatbot für Züricher Steuerrecht · OST FS26
-</div>
-
-<div class="abs-br m-6 text-sm opacity-60">Yannick Ott <br>Noah Debbabi</div>
