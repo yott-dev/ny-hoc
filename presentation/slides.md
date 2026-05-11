@@ -159,14 +159,25 @@ flowchart LR
 
 
 ## <b> <h1 class="text-emerald-600"> Ergebnis </h1> </b>
-<br><br><br>
+
+<br>
+```python
+METADATEN: {'h2': '**A. Grundlagen**', 'page': 1, 'source': 'Merkbl_Selbst_ZH_2025.pdf'}
+INHALT: . 2 StG). Darüber hinaus ist mit der Steuererklärung das Hilfsblatt A einzureichen, das einen...
+```
+<br><br>
 Quellenangabe zeigt für PDFs: 
 <br>
-`steuergesetz.pdf (Seite 3, A. Steuerpflicht)`
-<br><br><br>
+```
+steuergesetz.pdf (Seite 3, A. Steuerpflicht)
+```
+<br><br>
 Quellenangabe zeigt für Steuerbuch Webseite: 
+
 <br>
-`https://www.zh.ch/de/steuern-finanzen/steuern/treuhaender/steuerbuch/steuerbuch-definition/zstb-3-1.html?search=miete`
+```
+https://www.zh.ch/de/steuern-finanzen/steuern/treuhaender/steuerbuch/steuerbuch-definition/zstb-3-1.html?search=miete
+```
 
 
 
