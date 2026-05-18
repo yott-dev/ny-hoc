@@ -39,7 +39,7 @@ from custom_agents import TopicGuardrailMiddleware, InformationGuardrailMiddlewa
 agent_llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
-    max_tokens=500,
+    max_tokens=3000,
     temperature=0,
     #for streaming
     streaming=True
@@ -162,20 +162,17 @@ def create_agent():
     system_prompt = (
     "Du bist ein Steuerberater-Assistent für Züricher Steuerrecht. Antworte auf Deutsch.\n\n"
 
-    "PFLICHT-ABLAUF bei jeder Frage:\n"
-    "1. Rufe immer search_steuerbuch auf ohne Ausnahme.\n"
-    "   Query: nur 1-2 Schlüsselwörter (z.B. 'Homeoffice', 'Quellensteuer', 'Miete abzüge').\n"
-    "2. Kombiniere das Steuerbuch-Ergebnis mit den mitgegebenen lokalen Dokumenten.\n"
-    "3. Bei widersprüchlichen Quellen: bevorzuge das neuere Dokument.\n\n"
+    "TOOL-AUFRUF (search_steuerbuch):\n"
+    "- Aufrufen bei: kantonalen Zürich-spezifischen Regelungen, Steuertarifen, Abzugslimiten, gesetzlichen Fristen.\n"
+    "- Nicht nötig bei: allgemeinen Definitionen die in den lokalen Dokumenten vollständig abgedeckt sind.\n\n"
 
     "ANTWORT-REGELN:\n"
-    "- Ergänze NIEMALS aus dem Gedächtnis.\n"
+    "- Nutze NUR die mitgegebenen lokalen Dokumente und search_steuerbuch, ergänze NIEMALS aus dem Gedächtnis.\n"
+    "- Bei widersprüchlichen Quellen: bevorzuge das neuere Dokument.\n"
     "- Gib immer die Quellen an (Datei, Seite oder URL).\n"
-    "- Wenn search_steuerbuch keine Ergebnisse liefert: antworte ausschliesslich aus den lokalen Dokumenten.\n"
-    "- Wenn keine eindeutige Antwort möglich: "
+    "- Wenn keine eindeutige Antwort möglich: antworte mit "
     "'Dazu konnte ich keine eindeutige Antwort finden. "
-    "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'"
-    "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
+    "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n"
     )
 
     # lc_create_agent baut den kompletten Agent-Loop intern auf
@@ -256,6 +253,8 @@ def get_agent_response_stream(query, vector_store, chat_history):
 
     return stream_generator(), rag_context, collected_messages
 
+MAX_HISTORY_PAIRS = 6  # Letzte 6 Frage-Antwort-Paare an den Agent weitergeben
+
 def start_agent(vector_store: Chroma):
     st.title("Steuer-Assistenz")
     st.info("Die Antworten stellen keine rechtsverbindliche Auskunft dar und können Fehler enthalten und kantonal variieren. Es wird keinerlei Haftung übernommen.", width="stretch")
@@ -318,6 +317,9 @@ def start_agent(vector_store: Chroma):
             HumanMessage(content=prompt),
             AIMessage(content=answer),
         ])
+        # Rolling Window: nur letzte MAX_HISTORY_PAIRS Paare für den Agent behalten
+        # (UI-messages bleibt vollständig, damit der User zurückscrollen kann)
+        st.session_state.chat_history = st.session_state.chat_history[-(MAX_HISTORY_PAIRS * 2):]
 
 def start_authentication(vector_store):
     #initialisiere session_state.authenticated
@@ -354,7 +356,7 @@ def main():
         load_documents_into_vector_store(vector_store, chunks)
 
     #run_evaluation(vector_store)
-    #run_agent_evaluation(vector_store, get_agent_response)
+    run_agent_evaluation(vector_store, get_agent_response)
     #start_agent(vector_store)
     start_authentication(vector_store)
 

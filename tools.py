@@ -5,6 +5,7 @@ from langchain_core.tools import tool
 from langchain_chroma import Chroma
 from langchain_core.tools import tool
 from langchain.chat_models import init_chat_model
+from sentence_transformers import CrossEncoder
 
 # informationen können von einer webseite als HTML oder XML gescraped werden
 from bs4 import BeautifulSoup
@@ -14,6 +15,17 @@ from rapidfuzz import fuzz
 
 # Kleines, günstiges Modell nur für Query-Generierung (kein GPT-4o nötig für diese einfache Aufgabe)
 _query_llm = init_chat_model("gpt-4o-mini", model_provider="openai", temperature=0)
+
+# Lazy init — Modell wird erst beim ersten Aufruf geladen (~130MB, danach gecacht)
+_reranker: CrossEncoder | None = None
+
+def _get_reranker() -> CrossEncoder:
+    global _reranker
+    if _reranker is None:
+        _reranker = CrossEncoder("cross-encoder/msmarco-MiniLM-L12-en-de-v1")
+    return _reranker
+
+TOP_K_RERANKED = 6  # Nur die 6 relevantesten Chunks an den Agent weitergeben
 
 
 def generate_queries(question: str, n: int = 3) -> list[str]:
@@ -28,6 +40,7 @@ def generate_queries(question: str, n: int = 3) -> list[str]:
         f"Formuliere {n} alternative Suchanfragen für folgende Frage. "
         f"Jede Anfrage soll 1-3 präzise Steuerfachbegriffe enthalten, "
         f"die in Steuergesetzen oder ESTV-Kreisschreiben vorkommen würden. "
+        f"Füge KEINE Jahreszahlen hinzu. "
         f"Gib NUR die Anfragen zurück, eine pro Zeile, ohne Nummerierung oder Erklärung.\n\n"
         f"Frage: {question}"
     )
@@ -89,10 +102,13 @@ def _fetch_page_text(url: str, max_chars: int = 10000) -> str:
 def search_steuerbuch(query: str) -> str:
     """Durchsucht das Zürcher Steuerbuch (zh.ch) — die verbindliche Rechtsquelle für kantonales Steuerrecht.
 
-    WANN AUFRUFEN (Pflicht):
-    - Bei jeder Frage auch wenn lokale Dokumente vorhanden sind
-  
-    QUERY-REGEL (wichtig): Übergib immer nur 1-2 präzise Schlüsselwörter für den übergeordneten Kontext und keine ganzen Sätze.
+    WANN AUFRUFEN:
+    - Bei Fragen zu kantonalen Zürich-spezifischen Regelungen
+    - Bei Fragen zu Steuertarifen, Abzugslimiten oder gesetzlichen Fristen
+    - Wenn lokale Dokumente keine eindeutige Antwort liefern
+    Nicht nötig bei: allgemeinen Definitionen die lokal vollständig abgedeckt sind.
+
+    QUERY-REGEL (wichtig): Übergib immer nur 1-2 präzise Schlüsselwörter, keine ganzen Sätze.
     Beispiele: "Homeoffice", "Miete Abzug", "Quellensteuer", "Erbschaft"
 
     THEMEN IM ZÜRCHER STEUERBUCH:
@@ -211,7 +227,15 @@ def create_local_search_tool(vector_store: Chroma):
 
         print(f"📄 {len(all_results)} einzigartige Chunks gefunden (aus {len(all_queries)} Queries)")
 
-        # Schritt 3: Ergebnisse formatieren — gleich wie vorher
+        # Schritt 3: Reranking — Cross-Encoder bewertet (Originalfrage, Chunk)-Paare
+        # Vorteil gegenüber Embedding-Similarity: Modell sieht Query und Chunk zusammen
+        # → erkennt semantische Relevanz präziser, filtert irrelevante Chunks heraus
+        scores = _get_reranker().predict([(query, doc.page_content) for doc in all_results])
+        ranked = sorted(zip(scores, all_results), key=lambda x: x[0], reverse=True)
+        all_results = [doc for _, doc in ranked[:TOP_K_RERANKED]]
+        print(f"🏆 Nach Reranking: {len(all_results)} Chunks behalten")
+
+        # Schritt 4: Ergebnisse formatieren — gleich wie vorher
         # Jeden Treffer mit Quellenangabe formatieren damit das LLM die Herkunft kennt
         # section = nächstgelegene Überschrift aus dem MarkdownHeaderTextSplitter (h2 bevorzugt)
         parts = []

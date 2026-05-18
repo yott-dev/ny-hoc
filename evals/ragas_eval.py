@@ -4,6 +4,7 @@ import os
 import re
 import pandas as pd
 import asyncio
+import matplotlib.pyplot as plt
 from ragas import experiment, Dataset
 from ragas.metrics.collections import AnswerAccuracy, Faithfulness, AnswerRelevancy, ContextPrecision, ContextRecall
 from ragas.llms import llm_factory
@@ -99,6 +100,44 @@ def next_experiment_name(base: str, folder: str = "evals/experiments") -> str:
     existing = [f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f)]
     return f"{base}_v{len(existing) + 1}"
 
+# Diagramm erstellen für die Auswertung von den Experiments
+METRICS = ["answer_accuracy", "faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+
+def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experiments"):
+    """Lädt alle Experiment-CSVs und zeigt den Metrik-Verlauf als Liniendiagramm."""
+    files = sorted(f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f))
+    if not files:
+        print("Keine Experiment-Dateien gefunden.")
+        return
+
+    records = []
+    for fname in files:
+        df = pd.read_csv(os.path.join(folder, fname))
+        row = {"version": fname.removesuffix(".csv")}
+        for m in METRICS:
+            if m in df.columns:
+                row[m] = round(df[m].mean(), 3)
+        records.append(row)
+
+    summary = pd.DataFrame(records).set_index("version")
+    print("\nMetrik-Übersicht:")
+    print(summary.to_string())
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for metric in METRICS:
+        if metric in summary.columns:
+            ax.plot(summary.index, summary[metric], marker="o", label=metric)
+
+    ax.set_title(f"Metrik-Verlauf: {base}")
+    ax.set_xlabel("Experiment")
+    ax.set_ylabel("Score (0–1)")
+    ax.set_ylim(0, 1)
+    ax.legend(loc="lower right")
+    ax.grid(axis="y", alpha=0.4)
+    plt.xticks(rotation=20, ha="right")
+    plt.tight_layout()
+    plt.show()
+
 def run_evaluation(vector_store):
     client = AsyncOpenAI()
     llm = llm_factory("gpt-4o", client=client)
@@ -133,7 +172,8 @@ def run_evaluation(vector_store):
         )
 
         return {
-            **row,
+            "user_input": row["user_input"],
+            "reference": row["reference"],
             "response": answer,
             "answer_accuracy": accuracy.value,
             "faithfulness": faith.value,
@@ -146,6 +186,7 @@ def run_evaluation(vector_store):
     print(f"💾 Speichere Experiment als: {name}")
     results = asyncio.run(run_experiment.arun(dataset, name=name))
     print(results.to_pandas().to_string())
+    plot_experiments(base="steuerbot")
 
 
 def run_agent_evaluation(vector_store, agent_fn):
@@ -186,7 +227,8 @@ def run_agent_evaluation(vector_store, agent_fn):
         )
 
         return {
-            **row,
+            "user_input": row["user_input"],
+            "reference": row["reference"],
             "response": answer,
             "answer_accuracy": accuracy.value,
             "faithfulness": faith.value,
@@ -198,8 +240,9 @@ def run_agent_evaluation(vector_store, agent_fn):
     print(f"💾 Speichere Experiment als: {name}")
     results = asyncio.run(run_experiment.arun(dataset, name=name))
     print(results.to_pandas().to_string())
+    plot_experiments(base="steuerbot_agent")
 
-
-
-
+# Experiments als Diagramm plotten wenn ragas_eval.py ausgeführt wird
+if __name__ == "__main__":
+    plot_experiments(base="steuerbot_agent")
 

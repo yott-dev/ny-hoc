@@ -17,9 +17,14 @@ class TopicGuardrailMiddleware(AgentMiddleware):
     def before_model(self, state, runtime):
         for msg in reversed(state["messages"]):
             if isinstance(msg, HumanMessage):
+                # msg.content enthält "Lokale Dokumente:\n...\n\nFrage: <Nutzerfrage>"
+                # Nur die eigentliche Nutzerfrage extrahieren, nicht den RAG-Kontext
+                content = msg.content
+                if "\n\nFrage: " in content:
+                    content = content.split("\n\nFrage: ")[-1]
                 result = classifier_llm.invoke(
                     f"""Ist diese Frage eine Steuerfrage? Antworte NUR mit 'ja' oder 'nein'.
-                    Frage: {msg.content}"""
+                    Frage: {content}"""
                 )
                 if "nein" in result.content.lower():
                     raise ValueError(
