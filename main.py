@@ -49,7 +49,7 @@ def load_documents() -> list[Document]:
     docs = []
 
     # wandelt PDFs mit pymupdf4llm in sauberes Markdown um
-    for pdf_path in Path("ressources/pdf").glob("*.pdf"):
+    for pdf_path in Path("ressources/pdf").rglob("*.pdf"):
         # page_chunks=True gibt jede Seite einzeln zurück → Seitenzahl bleibt als Metadatum
         pages = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
         for i, page in enumerate(pages):
@@ -57,7 +57,7 @@ def load_documents() -> list[Document]:
             page_num = meta.get("page", meta.get("page_number", i + 1))
             docs.append(Document(
                 page_content=page["text"],
-                metadata={"source": pdf_path.name, "page": page_num}
+                metadata={"source": pdf_path.name, "page": page_num, "folder": pdf_path.parent.name}
             ))
 
     # wandelt HTML mit html2text in Markdown um
@@ -77,12 +77,19 @@ def load_documents() -> list[Document]:
             metadata={"source": html_path.name}
         ))
 
+    # Markdown-Dateien direkt einlesen (keine Konvertierung nötig)
+    for md_path in Path("ressources/md").glob("*.md"):
+        docs.append(Document(
+            page_content=md_path.read_text(encoding="utf-8"),
+            metadata={"source": md_path.name}
+        ))
+
     print(f"{len(docs)} Dokument-Abschnitte geladen")
     return docs
 
 def split_documents(docs: list[Document]) -> list[Document]:
     # Pass 1: Nach Markdown-Überschriften aufteilen (## Abschnitte aus pymupdf4llm/html2text)
-    # Jeder Abschnitt bekommt den Heading-Text als Metadatum (h1, h2, h3)
+    # Jeder Heading-Text (h1, h2, h3) wird pro Abschnitt in die Metadaten geschrieben 
     md_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
         strip_headers=False  # Überschrift bleibt im Chunk-Text erhalten
@@ -102,8 +109,14 @@ def split_documents(docs: list[Document]) -> list[Document]:
         # Source + Page aus dem Original-Dokument zu jedem Chunk hinzufügen
         for chunk in header_chunks:
             chunk.metadata.update(doc.metadata)
-        # Grössen-Split: lange Abschnitte weiter aufteilen
-        all_chunks.extend(char_splitter.split_documents(header_chunks))
+
+        # Tabellen-PDFs (Unterordner "Tabellen/") als ganze Seite behalten —
+        # der Char-Splitter würde Tabellenzeilen vom Header trennen und den Kontext zerstören
+        if doc.metadata.get("folder") == "Tabellen":
+            all_chunks.extend(header_chunks)
+        else:
+            # Grössen-Split: lange Abschnitte weiter aufteilen
+            all_chunks.extend(char_splitter.split_documents(header_chunks))
 
     print(f"✂️  {len(all_chunks)} Chunks erstellt")
     return all_chunks
@@ -128,9 +141,13 @@ def load_documents_into_vector_store(vector_store: Chroma, chunks: list[Document
     if vector_store.get(ids[:1])["ids"]:
         print("All chunks already in store")
     else:
-        # load chunks with ids into vector store, chunks gets automatically embedded
-        vector_store.add_documents(documents=chunks, ids=ids)
-        print(f"{len(ids)} new chunks added to store")
+        batch_size = 500
+        for i in range(0, len(chunks), batch_size):
+            batch_chunks = chunks[i:i + batch_size]
+            batch_ids = ids[i:i + batch_size]
+            vector_store.add_documents(documents=batch_chunks, ids=batch_ids)
+            print(f"  Batch {i // batch_size + 1}: {len(batch_chunks)} Chunks gespeichert")
+        print(f"✅ {len(ids)} Chunks total in Store geladen")
 
 def create_agent():
     # Neue Tools können hier einfach zur Liste hinzugefügt werden
@@ -158,7 +175,7 @@ def create_agent():
     "- Wenn keine eindeutige Antwort möglich: "
     "'Dazu konnte ich keine eindeutige Antwort finden. "
     "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'"
-        "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
+    "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
     )
 
     # lc_create_agent baut den kompletten Agent-Loop intern auf

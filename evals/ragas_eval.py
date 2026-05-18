@@ -1,6 +1,7 @@
 from langchain_core.documents import Document
 from ragas.testset import TestsetGenerator
 import os
+import re
 import pandas as pd
 import asyncio
 from ragas import experiment, Dataset
@@ -87,11 +88,16 @@ def generate_testset(docs, ragas_llm, ragas_embeddings, testset_size=10):
 
 def load_dataset():
     dataset = Dataset.load(
-        name="data",
+        name="data_v4",
         backend="local/csv",
         root_dir="./evals"
     )
     return dataset
+
+def next_experiment_name(base: str, folder: str = "evals/experiments") -> str:
+    """Gibt den nächsten verfügbaren Versionsnamen zurück (z.B. steuerbot_v3)."""
+    existing = [f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f)]
+    return f"{base}_v{len(existing) + 1}"
 
 def run_evaluation(vector_store):
     client = AsyncOpenAI()
@@ -136,7 +142,9 @@ def run_evaluation(vector_store):
             "context_recall": recall.value,
         }
 
-    results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_v"))
+    name = next_experiment_name("steuerbot")
+    print(f"💾 Speichere Experiment als: {name}")
+    results = asyncio.run(run_experiment.arun(dataset, name=name))
     print(results.to_pandas().to_string())
 
 
@@ -186,7 +194,9 @@ def run_agent_evaluation(vector_store, agent_fn):
             "context_precision": precision.value,
             "context_recall": recall.value,
         }
-    results = asyncio.run(run_experiment.arun(dataset, name="steuerbot_agent_v"))
+    name = next_experiment_name("steuerbot_agent")
+    print(f"💾 Speichere Experiment als: {name}")
+    results = asyncio.run(run_experiment.arun(dataset, name=name))
     print(results.to_pandas().to_string())
 
 

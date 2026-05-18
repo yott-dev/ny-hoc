@@ -260,7 +260,7 @@ flowchart LR
 | Kontrollsegmente   | Beschreibung                             |
 |--------------------|------------------------------------------|
 | **Authentication** | Login für den User                       |
-| **LLM-as-a-Guard** | Middleware (Überprüfung prompt)          |
+| **LLM-as-a-Guard** | Middleware (Überprüfung Prompt)          |
 | **Output Control** | LLM-Spezifikation wie llm und max_tokens |
 | **Langfuse**       | Überwachung der LLM calls                |
 
