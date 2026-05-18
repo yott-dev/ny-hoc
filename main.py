@@ -98,7 +98,7 @@ def split_documents(docs: list[Document]) -> list[Document]:
     # Pass 2: Jeden Abschnitt nach Zeichenlänge aufteilen falls er zu gross ist
     char_splitter = RecursiveCharacterTextSplitter(
         chunk_size=750,
-        chunk_overlap=150,
+        chunk_overlap=250,
         separators=["\n\n", "\n", ".", " "]
     )
 
@@ -117,6 +117,9 @@ def split_documents(docs: list[Document]) -> list[Document]:
         else:
             # Grössen-Split: lange Abschnitte weiter aufteilen
             all_chunks.extend(char_splitter.split_documents(header_chunks))
+
+    # Leere und zu kurze Chunks entfernen (Seitenzahlen, isolierte Überschriften, Leerseiten)
+    all_chunks = [c for c in all_chunks if len(c.page_content.strip()) >= 30]
 
     print(f"✂️  {len(all_chunks)} Chunks erstellt")
     return all_chunks
