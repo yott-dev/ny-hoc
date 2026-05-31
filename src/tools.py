@@ -2,52 +2,8 @@ import requests
 import html2text
 
 from langchain_core.tools import tool
-from langchain_chroma import Chroma
-from langchain_core.tools import tool
-from langchain.chat_models import init_chat_model
-from sentence_transformers import CrossEncoder
-
-# informationen können von einer webseite als HTML oder XML gescraped werden
 from bs4 import BeautifulSoup
-
-# misst wie ähnlich zwei Texte sind, auch wenn sie nicht exakt übereinstimmen (günstiger als embedding)
 from rapidfuzz import fuzz
-
-# Kleines, günstiges Modell nur für Query-Generierung (kein GPT-4o nötig für diese einfache Aufgabe)
-_query_llm = init_chat_model("gpt-4o-mini", model_provider="openai", temperature=0)
-
-# Lazy init — Modell wird erst beim ersten Aufruf geladen (~130MB, danach gecacht)
-_reranker: CrossEncoder | None = None
-
-def _get_reranker() -> CrossEncoder:
-    global _reranker
-    if _reranker is None:
-        _reranker = CrossEncoder("cross-encoder/msmarco-MiniLM-L12-en-de-v1")
-    return _reranker
-
-TOP_K_RERANKED = 6  # Nur die 6 relevantesten Chunks an den Agent weitergeben
-
-
-def generate_queries(question: str, n: int = 3) -> list[str]:
-    """Generiert n alternative Suchanfragen für eine gegebene Frage.
-
-    Warum: Nutzer formulieren Fragen umgangssprachlich ("zuhause arbeiten"),
-    aber Steuerdokumente verwenden Fachbegriffe ("Homeoffice-Abzug", "Arbeitszimmer").
-    Mehrere Varianten erhöhen die Chance, relevante Chunks zu finden.
-    """
-    prompt = (
-        f"Du bist ein Schweizer Steuerrecht-Experte. "
-        f"Formuliere {n} alternative Suchanfragen für folgende Frage. "
-        f"Jede Anfrage soll 1-3 präzise Steuerfachbegriffe enthalten, "
-        f"die in Steuergesetzen oder ESTV-Kreisschreiben vorkommen würden. "
-        f"Füge KEINE Jahreszahlen hinzu. "
-        f"Gib NUR die Anfragen zurück, eine pro Zeile, ohne Nummerierung oder Erklärung.\n\n"
-        f"Frage: {question}"
-    )
-    response = _query_llm.invoke(prompt)
-    # Jede Zeile ist eine Anfrage — leere Zeilen werden gefiltert
-    queries = [q.strip() for q in response.content.strip().split("\n") if q.strip()]
-    return queries[:n]
 
 
 
@@ -190,67 +146,6 @@ def search_steuerbuch(query: str) -> str:
     return header + "\n\n---\n\n".join(collected)
 
 
-def create_local_search_tool(vector_store: Chroma):
-    # Factory: Erstellt das RAG-Tool mit dem vector_store als Closure.
-    # So bleibt alle Tool-Logik in tools.py, main.py liefert nur den vector_store.
-    @tool
-    def search_local_documents(query: str) -> str:
-        """Durchsucht die lokale Datenbank mit Schweizer Steuergesetzen und ESTV-Kreisschreiben.
-        Verwende dieses Tool zuerst, bevor du das Online-Steuerbuch durchsuchst."""
-
-        # Schritt 1: 3 alternative Suchanfragen generieren
-        # Zusammen mit der Originalfrage haben wir 4 Queries total
-        alt_queries = generate_queries(query, n=3)
-        all_queries = [query] + alt_queries
-        print(f"🔍 Multi-Query: {all_queries}")
-
-        # Schritt 2: Für jede Query die ChromaDB durchsuchen
-        # seen_ids verhindert, dass derselbe Chunk mehrfach im Kontext landet
-        seen_ids: set[str] = set()
-        all_results = []
-
-        for q in all_queries:
-            for doc in vector_store.similarity_search(q, k=5):
-                # Eindeutige ID pro Chunk: Dateiname + Seite + erster Textinhalt
-                # (page_content[:80] reicht, da zwei identische Chunks denselben Anfang haben)
-                doc_id = (
-                    f"{doc.metadata.get('source')}_"
-                    f"{doc.metadata.get('page')}_"
-                    f"{doc.page_content[:80]}"
-                )
-                if doc_id not in seen_ids:
-                    seen_ids.add(doc_id)
-                    all_results.append(doc)
-
-        if not all_results:
-            return "Keine relevanten Dokumente in der lokalen Datenbank gefunden."
-
-        print(f"📄 {len(all_results)} einzigartige Chunks gefunden (aus {len(all_queries)} Queries)")
-
-        # Schritt 3: Reranking — Cross-Encoder bewertet (Originalfrage, Chunk)-Paare
-        # Vorteil gegenüber Embedding-Similarity: Modell sieht Query und Chunk zusammen
-        # → erkennt semantische Relevanz präziser, filtert irrelevante Chunks heraus
-        scores = _get_reranker().predict([(query, doc.page_content) for doc in all_results])
-        ranked = sorted(zip(scores, all_results), key=lambda x: x[0], reverse=True)
-        all_results = [doc for _, doc in ranked[:TOP_K_RERANKED]]
-        print(f"🏆 Nach Reranking: {len(all_results)} Chunks behalten")
-
-        # Schritt 4: Ergebnisse formatieren — gleich wie vorher
-        # Jeden Treffer mit Quellenangabe formatieren damit das LLM die Herkunft kennt
-        # section = nächstgelegene Überschrift aus dem MarkdownHeaderTextSplitter (h2 bevorzugt)
-        parts = []
-        for doc in all_results:
-            meta = doc.metadata
-            section = meta.get("h2") or meta.get("h1") or ""
-            section_str = f", {section}" if section else ""
-            page_str = f", Seite {meta.get('page')}" if meta.get("page") is not None else ""
-            parts.append(
-                f"[Quelle: {meta.get('source', '?')}{page_str}{section_str}]\n"
-                f"{doc.page_content}"
-            )
-        return "\n\n".join(parts)
-
-    return search_local_documents
 
 
 # Lokaler Test — wird nur ausgeführt wenn `uv run python tools.py` gestartet wird.

@@ -7,8 +7,6 @@ from src.agent import get_agent_response_stream
 from src.config import MAX_HISTORY_PAIRS, agent_llm
 from langchain.agents import create_agent
 
-from tools import create_local_search_tool
-
 #------ui-------
 import streamlit as st
 

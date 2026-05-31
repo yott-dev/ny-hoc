@@ -216,12 +216,13 @@ def run_agent_evaluation(vector_store, agent_fn):
 
     @experiment()
     async def run_experiment(row):
-        result, rag_context = agent_fn(row["user_input"], vector_store, [])
+        result, rag_context, rag_docs = agent_fn(row["user_input"], vector_store, [])
         answer = result["messages"][-1].content
 
-        rag_chunks = [block.strip() for block in rag_context.split("\n\n") if block.strip()]
+        # Dokument-Objekte direkt verwenden statt String-Split — gibt RAGAS die echten 6 Chunks
+        doc_contexts = [doc.page_content for doc in rag_docs]
         tool_texts = [msg.content for msg in result["messages"] if isinstance(msg, ToolMessage)]
-        contexts = rag_chunks + tool_texts
+        contexts = doc_contexts + tool_texts
 
         # Alle 5 Variablen korrekt unpacken
         accuracy, faith, relevancy, precision, recall = await asyncio.gather(

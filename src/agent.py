@@ -10,7 +10,10 @@ from langchain_core.messages import AIMessageChunk
 from src.utils_parsing import get_langfuse_handler
 
 #----Tools-----
-from tools import search_steuerbuch, create_local_search_tool
+from src.tools import search_steuerbuch
+
+#----Retriever (RAG-First Pipeline)----
+from src.retriever import retrieve_local_context
 
 #------ui-------
 import streamlit as st
@@ -48,12 +51,12 @@ def create_agent():
     return lc_create_agent(agent_llm, tools, middleware=middleware, system_prompt=system_prompt, debug=False)
 
 @st.cache_resource(hash_funcs={Chroma: lambda _: None})
-def get_cached_agent(vector_store):
-    return create_agent(), create_local_search_tool(vector_store)
+def get_cached_agent(vector_store):  # vector_store als Cache-Key, nicht direkt genutzt
+    return create_agent()
 
 def get_agent_response(query, vector_store, chat_history):
-    agent, local_search = get_cached_agent(vector_store)
-    rag_context = local_search.invoke({"query": query})
+    agent = get_cached_agent(vector_store)
+    rag_context, rag_docs = retrieve_local_context(query, vector_store)
     messages = chat_history + [HumanMessage(
         content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
     )]
@@ -62,12 +65,12 @@ def get_agent_response(query, vector_store, chat_history):
         {"messages": messages},
         config={"callbacks": [get_langfuse_handler()]}
     )
-    return result, rag_context
+    return result, rag_context, rag_docs
 
 
 def get_agent_response_stream(query, vector_store, chat_history):
-    agent, local_search = get_cached_agent(vector_store)
-    rag_context = local_search.invoke({"query": query})
+    agent = get_cached_agent(vector_store)
+    rag_context, _ = retrieve_local_context(query, vector_store)
     messages = chat_history + [HumanMessage(
         content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
     )]

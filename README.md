@@ -1,183 +1,244 @@
-# Steuer-Chatbot Zürich
+OST FS26
+Yannick Ott und Noah Debbabi 
+FS26 | 25. Mai 2026
 
-Retrieval-Augmented Generation (RAG) Chatbot für Züricher Steuerrecht, entwickelt im Rahmen des Moduls *Hands-on Chatbot* an der OST (FS26).
+Dozent: Marcel Amsler
 
-Der Chatbot beantwortet Steuerfragen auf Basis lokaler Rechtsdokumente (PDFs, HTML, Markdown) sowie dem Online-Steuerbuch des Kantons Zürich (zh.ch) — ohne aus dem Modell-Gedächtnis zu antworten.
+# Steuer-Chatbot für den Kanton Zürich
 
----
+Agentic-RAG-Chatbot für das Zürcher Steuerrecht, entwickelt im Rahmen des Moduls Hands-on Chatbot an der OST.
 
-## Architektur
+Der Chatbot beantwortet Fragen zum Steuerrecht 2025 und hilft bei der Opimierung der Steuern auf Basis lokaler Rechtsdokumente, Steuertipps, einem Ratgeberbuch (PDFs, HTML, 
+Markdown) sowie dem Online-Steuerbuch des Kantons Zürich (zh.ch). 
 
-```
-Nutzerfrage
-    │
-    ├─► TopicGuardrail (klassifiziert ob Steuerfrage)
-    │
-    ├─► Multi-Query Rewriting  (gpt-4o-mini, 3 alternative Queries)
-    │       │
-    │       └─► ChromaDB Similarity Search (4 Queries × 5 Chunks)
-    │               │
-    │               └─► Cross-Encoder Reranking → Top 6 Chunks
-    │
-    ├─► Agent (gpt-4o)
-    │       │
-    │       └─► Tool: search_steuerbuch (zh.ch API, bei Bedarf)
-    │
-    └─► Antwort mit Quellenangaben (Streamlit, Token-by-Token)
-```
+### Quick Setup
 
-### Retrieval-Pipeline
-
-Die lokale Suche nutzt eine zweistufige Pipeline:
-
-1. **Multi-Query Rewriting**: `gpt-4o-mini` generiert 3 alternative Suchanfragen in Steuer-Fachsprache (z.B. aus *"zuhause arbeiten"* wird *"Homeoffice-Abzug"*, *"Arbeitszimmer steuerlich"*, *"Teleworking Kosten"*). Damit werden 4 Queries total gegen ChromaDB ausgeführt.
-
-2. **Cross-Encoder Reranking**: Die bis zu 20 resultierenden Chunks werden vom Modell `cross-encoder/msmarco-MiniLM-L12-en-de-v1` als (Query, Chunk)-Paare bewertet. Nur die 6 relevantesten Chunks werden an den Agent weitergegeben.
-
-### Agent
-
-Der Agent (LangChain, GPT-4o) entscheidet kontextabhängig ob das Online-Steuerbuch (`search_steuerbuch`) zusätzlich konsultiert werden soll — insbesondere bei kantonalen Zürich-spezifischen Regelungen, Steuertarifen und gesetzlichen Fristen. Die Chat-History wird auf die letzten 6 Frage-Antwort-Paare begrenzt (Rolling Window).
-
----
-
-## Datenquellen
-
-### Lokal (ChromaDB)
-
-| Typ | Inhalt |
-|-----|--------|
-| PDFs | Steuergesetz ZH 631.1, Wegleitung ZH 2025, Merkblatt Selbstständige ZH 2025 |
-| PDFs | ~75 ESTV-Kreisschreiben (KS Nr. 3–50a) |
-| PDFs | 14 Tabellen-PDFs: Steuersätze, Abzüge, Kantonsvergleiche 2025 |
-| PDFs | Buch: *Der Steuerberater – Steuern optimieren* |
-| HTML | SR 642.11 DBG, SR 642.14 StHG, SR 642.21 VStG |
-| Markdown | Steueroptimierungs-Guides (Eigenheim, Pensionierung, Selbstständige u.a.) |
-
-### Online
-
-| Quelle | Zugriff |
-|--------|---------|
-| Zürcher Steuerbuch (zh.ch) | Interner JCR-API-Endpoint, HTML-Scraping |
-
----
-
-## Chunking-Strategie
-
-Dokumente werden in zwei Passes aufgeteilt:
-
-1. **MarkdownHeaderTextSplitter**: Teilt nach `#`, `##`, `###` Überschriften auf. Jeder Chunk erhält die zugehörige Überschrift als Metadatum (`h1`, `h2`, `h3`).
-
-2. **RecursiveCharacterTextSplitter**: Teilt zu grosse Abschnitte weiter auf (max. 750 Zeichen, 250 Zeichen Overlap). Trennzeichen-Priorität: `\n\n` → `\n` → `.` → ` `.
-
-**Sonderfall Tabellen**: PDFs im Unterordner `Tabellen/` werden nicht durch den Char-Splitter aufgeteilt — die Tabellenstruktur (Spaltenüberschriften + Zeilen) muss als Ganzes erhalten bleiben.
-
-**Filter**: Chunks mit weniger als 30 Zeichen (Seitenzahlen, isolierte Überschriften) werden verworfen.
-
----
-
-## Evaluation
-
-Die Evaluation verwendet das [RAGAS](https://docs.ragas.io/)-Framework mit 5 Metriken:
-
-| Metrik | Bedeutung |
-|--------|-----------|
-| `answer_accuracy` | Übereinstimmung mit der Referenzantwort |
-| `faithfulness` | Antwortet der Agent nur aus den Quellen (keine Halluzinationen)? |
-| `answer_relevancy` | Beantwortet die Antwort die gestellte Frage? |
-| `context_precision` | Sind die retrieved Chunks wirklich relevant? |
-| `context_recall` | Werden alle relevanten Infos gefunden? |
-
-Das Testset (`evals/datasets/data_v4.csv`) enthält 50 Fragen aus 12 Themenkategorien (Steuerpflicht, Einkommen, Abzüge, Tabellen, ESTV-Kreisschreiben, Buch u.a.).
-
-Jedes Evaluations-Experiment wird versioniert gespeichert (`evals/experiments/steuerbot_agent_vN.csv`). Den Metrik-Verlauf über alle Versionen anzeigen und als PNG speichern:
-
-```bash
-uv run python evals/ragas_eval.py
-```
-
-![Metrik-Verlauf](evals/experiments/steuerbot_agent_verlauf.png)
-
----
-
-## Setup
-
-### Voraussetzungen
-
+**Voraussetzungen**
 - Python 3.14+
 - [uv](https://docs.astral.sh/uv/)
 - OpenAI API Key
 - Langfuse API Key (optional, für Observability)
 
-### Installation
+#### Installation
 
 ```bash
 # Dependencies installieren
 uv sync
 
-# Umgebungsvariablen konfigurieren
-cp .env.example .env
-# .env ausfüllen: OPENAI_API_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+# .env ausfüllen: 
+LANGFUSE_SECRET_KEY="..."
+LANGFUSE_PUBLIC_KEY="..."
+LANGFUSE_BASE_URL="..."
 ```
 
-### Starten
+#### Starten
+Beim ersten Start wird die ChromaDB automatisch befüllt (Embeddings werden einmalig generiert, ca. 2–7 Minuten). Bei nachfolgenden Starts wird die bestehende DB verwendet.
 
 ```bash
 uv run streamlit run main.py
 ```
-
-Beim ersten Start wird die ChromaDB automatisch befüllt (Embeddings werden einmalig generiert, ca. 5–10 Minuten). Bei nachfolgenden Starts wird die bestehende DB verwendet.
 
 **ChromaDB neu aufbauen** (nach neuen Dokumenten oder Änderungen am Chunking):
-
 ```bash
+
 rm -rf chroma_langchain_db/
+
 uv run streamlit run main.py
+
 ```
 
-### Login
-
+#### Login
 Zugangsdaten werden über Streamlit Secrets konfiguriert (`.streamlit/secrets.toml`):
 
 ```toml
-[credentials]
 username = "..."
 password = "..."
 ```
 
----
 
-## Projektstruktur
+### Einleitung und Ziele
+Das Steuerrecht ist komplex und besteht aus vielen verschiedenen Dokumenten mit unterschiedlichen Quellen. Bei Steuerfragen findet man kaum schnell präzise Antworten. Darum haben wir uns entschieden einen RAG Chatbot zu entwickeln, der zuverlässige und transparente Antworten auf Fragen rund um das Thema Steuern gibt. Dabei soll bei jeder Antwort auch direkt die Quellen referenziert werden, damit der Nutzer die entsprechenden Informationen prüfen und nachvollziehen kann. Zusätzlich soll der Chatbot nur Antworten aus den lokal hinterlegten Dokumenten geben und dabei nicht halluzinieren. 
 
+### Vorgehensweise
+In einer ersten Besprechung haben wir die Ziele und Eigenschaften des Chatbots definiert und direkt mit der Umsetzungsplanung begonnen. Alle zwei Wochen haben wir uns kleinere Ziele in Form von einzelnen Features gesetzt. In regelmässigen Besprechungen haben wir die verschiedenen Implementierungen uns gegenseitig erklärt und begründet. 
+
+Für die Zusammenarbeit nutzen wir GitHub wobei uns das Setup etwas Schwierigkeiten machte, da wir keine Erfahrung damit hatten. Durch die regelmässige Nutzung entstand aber relativ schnell eine Git-Workflow-Routine.
+
+Bei der Entwicklung der einzelnen Funktionen haben wir uns stark an der in der Vorlesung behandelten Theorie orientiert. Da wir sehr oft irgendwelche Fehlermeldungen hatten, nutzten wir oft das Prinzip Try and Error und machten uns die Dokumentation sowie Erklärungen von LLMs zu nutzen. 
+
+### Datenquellen und -verarbeitung
+Da wir anfangs keine Erfahrungen mit der Konzeption eines RAG Chatbots hatten, stellte die Identifikation der relevanten Datenquellen eine initiale Herausforderung dar. Um die Antwortqualität des Modells zu verbessern, haben wir den Fokus auf die Steuergesetzgebung 2025 des Bundes sowie des Kantons Zürich gelegt. Die Suche nach vertrauenswürdigen und detaillierten Steuerinformationen gestaltete sich aufgrund der limitierten Verfügbarkeit kostenloser Quellen als komplex. Unsere Datenbasis setzt sich aus folgenden Quellen zusammen:
+
+| **Format**   | **Inhalt**                                                                                                                 | **Typ**               |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| **PDF**      | Steuergesetz ZH 631.1, Wegleitung ZH 2025, Merkblatt Selbstständige ZH 2025                                                | Offizielle Dokumente  |
+| **PDF**      | ~75 ESTV-Kreisschreiben (KS Nr. 3–50a)                                                                                     | Offizielle Dokumente  |
+| **PDF**      | 14 Tabellen-PDFs: Steuersätze, Abzüge, Kantonsvergleiche 2025                                                              | Offizielle Dokumente  |
+| **PDF**      | Fachbuch: _Der Steuerberater – Steuern optimieren_                                                                         | Fachbuch              |
+| **HTML**     | SR 642.11 DBG, SR 642.14 StHG, SR 642.21 VStG                                                                              | Offizielles Dokument  |
+| **Markdown** | Optimierungs-Guides (Eigenheim, Pensionierung, Selbstständige)                                                             | Physische Unterlagen* |
+| **Online**   | Online-Steuerbuch des Kantons Zürich ([zh.ch](https://www.zh.ch/de/steuern-finanzen/steuern/treuhaender/steuerbuch.html)). | Offizielle Webseite   |
+
+ Die Kreisschreiben wurden mit einem Skript via BeautifulSoup von der Eidgenössische Steuerverwaltung ([ESTV](https://www.estv.admin.ch/de/kreisschreiben-direkten-bundessteuer)) heruntergeladen. Die übrigen Dokumente wurden manuell gesucht und der Datenbasis hinzugefügt. Merkblätter des VZ wurden eingescannt und durch Mistral OCR in Text als Markdown umgewandelt. Die Abfragen im Online-Steuerbuch wurden als Tool implementiert, dazu später mehr.
+
+Um eine optimale Indexierung für das RAG-System zu ermöglichen, wurden alle Daten in  Markdown-Text umgewandelt. Markdown bietet durch seine Strukturierung der Titel in # ein optimales Format für das Spliten in Chunks. Für die Konvertierung haben wir folgende Bibliotheken genutzt.
+
+- **PDF-Konvertierung:** PyMuPDF4LLM 
+- **HTML-Konvertierung:** html2text
+
+Die Vereinheitlichung auf Markdown stellt sicher, dass die Daten für das Retrieval-Modul konsistent vorliegen und der Kontext in Form des Titels erhalten bleibt. Dies ist für die Kontextqualität bei den Antworten entscheidend.
+
+### Entwicklung
+
+##### Architektur
+Lange waren wir unsicher ob wir einen RAG-First Ansatz in Kombination mit einem Tool für die Onlineabfrage im Steuerbuch nutzen sollen oder einen Agent, der zwei verschiedenen Tools (einmal Steuerbuch-Abfrage und einmal lokale Suche via RAG) zur Verfügung hat. 
+
+Aus folgenden Gründen haben wir uns dazu entschieden, den RAG-First Ansatz zu verfolgen:
+- Der Chatbot soll immer die lokalen Dokumente als Wissensbasis nutzen.
+- Latenz soll möglichst klein gehalten werden ohne zusätzlicher LLM Reasoning Schritt.
+- Senkt die Kosten, da kein zusätzlichen Tokens für LLM Inference gebraucht werden.
+- Die direkte Suche in der Vektordatenbank macht die Antworten zuverlässiger.
+- Steuerbuch-Abfrage ist nicht immer sinnvoll daher als Tool implementiert.
+
+Beim Start des Chatbots (uv run streamlit run main.py) wird jedes Mal geprüft ob es bereits eine Vector-Datenbank existiert. Wenn nicht werden einmalig alle Dokumente in Markdown umgewandelt, in Chunks aufgeteilt und dann via OpenAI Embedding Modell (`text-embedding-3-large`) in die ChromaDB geschrieben.
+
+Hier einen Überblick über unsere Architektur:
+
+```mermaid {theme: 'dark'}
+flowchart LR
+
+subgraph RAG["einmaliges Setup"]
+
+direction LR
+
+PDFs["PDFs"] --> MD["Markdown"]
+
+HTML["HTML"] --> MD
+
+MD --split_documents--> VStore["create Vector Store with ChromaDB"]
+
+VStore --> EMB["OpenAI Embedding Modell"]
+
+end
+
+  
+
+EMB -->|"Chunk + Vektor + Metadaten"| DB[("ChromaDB")]
+
+  
+
+S((" ")) --> AUTHENTICATION[Authentication]
+
+AUTHENTICATION --> FRAGE["Frage"]
+
+FRAGE --> FILTER["Middleware (Filter)"]
+
+FILTER --ungefährlich (local_search)--> DB
+
+FILTER --gefährlich--> ANS
+
+DB -->|"Kontext"| AGENT["Agent"]
+
+AGENT --> DEC{"Reicht lokaler Kontext?"}
+
+DEC --nein--> TOOL["Tool: search_steuerbuch"]
+
+TOOL --> LIVE["live Abfrage auf zh.ch (API)"]
+
+LIVE --> ANS{"Antwort"}
+
+DEC --ja--> DIRECT["antwortet direkt aus RAG"]
+
+DIRECT --> ANS
+
+ANS --> E((" "))
 ```
-ny-hoc/
-├── main.py                  # Streamlit UI, Embedding-Pipeline, Agent
-├── tools.py                 # search_steuerbuch (zh.ch), Multi-Query, Reranker
-├── custom_agents.py         # TopicGuardrail Middleware
-├── observability.py         # Langfuse Callback Handler
-├── evals/
-│   ├── ragas_eval.py        # Evaluation & Experiment-Visualisierung
-│   ├── datasets/            # Testsets (data_v4.csv)
-│   ├── experiments/         # Versionierte Experiment-Ergebnisse
-│   └── inspect_chunks.py    # Chunk-Inspektion und Qualitätsprüfung
-├── ressources/
-│   ├── pdf/                 # Steuergesetz, Kreisschreiben, Tabellen, Buch
-│   ├── html/                # DBG, StHG, VStG
-│   └── md/                  # Markdown-Dokumente
-└── PDF_downloader/          # Skript zum Herunterladen der ESTV-Kreisschreiben
+
+##### Chunking
+Dokumente werden in zwei Schritten in Chunks aufgeteilt:
+
+1. **MarkdownHeaderTextSplitter**: Teilt nach `#`, `##`, `###` Überschriften auf. Jeder Chunk erhält die zugehörige Überschrift als Metadatum (`h1`, `h2`, `h3`). Semantisch zusammengehöriger Inhalt bleibt zusammen
+
+2. **RecursiveCharacterTextSplitter**: Teilt zu grosse Abschnitte weiter auf mit maximal 750 Zeichen und 250 Zeichen Overlap. Verhindert zu grosse Chunks die das Kontextfenster sprengen. Quell-Metadaten (Datei, Seite, Abschnitt) bleiben erhalten
+
+**Ausnahme**: 
+PDFs mit Tabellen werden nicht durch den Char-Splitter aufgeteilt, damit die Tabellenstruktur mit Spaltenüberschriften und Zeilen als Ganzes erhalten bleiben. Chunks mit weniger als 30 Zeichen werden gefiltert und verworfen, da es sich meist nur um einen Titel ohne Inhalt handelt.
+
+Für die Quellenangaben und einen besseren Kontext schreiben wir pro Chunk den Dokumentenname, Abschnittsnamen und bei PDFs die Seite in die Metadaten.
+
+##### Retrieval
+Oftmals ist die Frage des Nutzers nicht präzise formuliert, fehlerhaft oder entspricht nicht den Fachbegriffen der Datenbank. Damit die Vector-Search trotzdem die bestmöglichen Chunks findet, haben wir ein Multi-Query-Rewriting implementiert. So wird sichergestellt, dass mehrere verschiedene Suchbegriffe für die Abfrage in der Datenbank genutzt werden. Die lokale Suche nutzt eine zweistufiger Ablauf:
+
+1. **Multi-Query Rewriting**: `gpt-4o-mini` generiert 3 alternative Suchanfragen in Steuer-Fachsprache (z.B. aus *"zuhause arbeiten"* wird "Homeoffice-Abzug"). Damit werden insgesamt 4 Abfragen in der ChromaDB gemacht.
+
+2. **Cross-Encoder Reranking**: Die bis zu 20 resultierenden Chunks werden vom Modell `cross-encoder/msmarco-MiniLM-L12-en-de-v1` als (Query, Chunk)-Paare bewertet. Nur die 6 relevantesten Chunks werden an den Agent weitergegeben.
+
+##### Agent
+Der Agent ([LangChain](https://docs.langchain.com/oss/python/langchain/agents)) entscheidet kontextabhängig ob das Tool `search_steuerbuch` aufgerufen werden soll. Eine genau Beschreibung mit den entsprechenden Anweisungen sind im Docstring definiert. Über den Systemprompt haben wir die Regeln für das verhalten festgelegt sowie den Tool Aufruf definiert. Zusätzlich sollen zwingend alle Antworten mit einer entsprechenden Quellenangabe versehen werden.
+
+Mit diesen Anweisungen unterdrücken wir auch mögliche Halluzinationen. Wenn keine sinnvollen Informationen für eine eindeutige Antwort gefunden werden, soll das LLM folgendes Antworten: "'Dazu konnte ich keine eindeutige Antwort finden. "
+
+```python
+LLM: "gpt-4o"
+max_tokens=3000
+temperature=0.2
+streaming=True
 ```
 
----
+Die max_tokens haben wir auf 3000 gesetzt damit für die steuerrechtlichen Antworten und Erklärungen genug Tokens zur Verfügung stehen. Die temperature haben wir sehr niedrig gewählt, um möglichst logische und konsistente Antworten zu bekommen. Die Chat-History wird auf die letzten 6 Frage-Antwort-Paare begrenzt.
+
+##### Tools
+Bis anhin haben wir nur statische Daten (lokale Dokumente) als Wissensbasis genutzt. Mit einem Tool search_steuerbuch geben wir unserem Agent die zusätzliche Funktion online eine Datenbank zu durchsuchen. Die Implementierung dieses Tool war eine grosse Herausforderung, da wir zuerst die Logik einer solchen Abfrage verstehen mussten. Nach langem suchen haben wir den internen API Endpoint via Chrome DevTools gefunden. 
+
+Link zum Zürcher Steuerbuch:
+https://www.zh.ch/de/steuern-finanzen/steuern/treuhaender/steuerbuch.html
+
+Anfangs hat das Tool bei der Suche quasi nie einen Treffer erzielt, da die Query des LLMs immer zu ausführlich war. Darum haben wir dann im Docstring die Anweisung gegeben nur noch mit ein bis zwei relevanten Schlagwörter zu suchen. Damit der Kontext nicht in einem loop mit URLs überflutet wird, haben wir die Anzahl Einträge, die zurückgegeben werden auf 30 begrenzt. Davon werden aber nur 3 Seiten dann effektiv ausgewählt und geladen.
+
+##### User Interface
+Streamlit erlaubte es uns die UI- und Authentifizierung-Logik kennen zu lernen und damit zu experimentieren. So konnten wir die Quellenangaben schön formatiert in einer Box darstellen und einen entsprechenden Rechtshinweis platzieren. Bei unserem Projekt lag der Fokus klar auf dem Chatbot und nicht auf einer voll funktionierenden Authentifizierung mit User Accounts. Daher haben wir aktuell nur einen Dummy-Account bei dem man sich anmelden kann.
+
+Zugangsdaten werden über Streamlit Secrets konfiguriert (`.streamlit/secrets.toml`):
+
+```toml
+username = "admin"
+password = "1234"
+```
+
+
+##### Sicherheit und Middleware
+Das Classifier-LLM prüft die Fragen auf zwei Aspekte. Einerseits sollen nur Fragen mit direktem Bezug zu Steuern beantwortet werden. Das verhindert auch missbräuchliche Fragen zu Bomben oder Waffen. Zum anderen werden Fragen mit persönlichen Daten blockiert.
+
+```python
+Modell: "gpt-4o-mini"
+max_tokens: 3
+temperature: 0
+```
+
+
 
 ## Technologie-Stack
 
+  
+
 | Komponente | Technologie |
+
 |------------|-------------|
+
 | LLM | GPT-4o (Agent + Antwort), GPT-4o-mini (Query-Rewriting, Guardrail) |
+
 | Embeddings | OpenAI `text-embedding-3-large` |
+
 | Vektordatenbank | ChromaDB (cosine similarity) |
+
 | Reranker | `cross-encoder/msmarco-MiniLM-L12-en-de-v1` |
+
 | Framework | LangChain 1.2 |
+
 | UI | Streamlit |
+
 | Evaluation | RAGAS |
+
 | Observability | Langfuse |
+
 | Paketmanager | uv |
