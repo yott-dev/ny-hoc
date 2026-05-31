@@ -13,10 +13,10 @@ from bs4 import BeautifulSoup
 # misst wie ähnlich zwei Texte sind, auch wenn sie nicht exakt übereinstimmen (günstiger als embedding)
 from rapidfuzz import fuzz
 
-# Kleines, günstiges Modell nur für Query-Generierung (kein GPT-4o nötig für diese einfache Aufgabe)
+# Kleines Modell nur für Query-Generierung
 _query_llm = init_chat_model("gpt-4o-mini", model_provider="openai", temperature=0)
 
-# Lazy init — Modell wird erst beim ersten Aufruf geladen (~130MB, danach gecacht)
+# Modell wird erst beim ersten Aufruf geladen
 _reranker: CrossEncoder | None = None
 
 def _get_reranker() -> CrossEncoder:
@@ -100,10 +100,10 @@ def _fetch_page_text(url: str, max_chars: int = 10000) -> str:
 
 @tool
 def search_steuerbuch(query: str) -> str:
-    """Durchsucht das Zürcher Steuerbuch (zh.ch) — die verbindliche Rechtsquelle für kantonales Steuerrecht.
+    """Durchsucht das Zürcher Steuerbuch (zh.ch), die verbindliche Rechtsquelle für kantonales Steuerrecht.
 
     WANN AUFRUFEN:
-    - Bei Fragen zu kantonalen Zürich-spezifischen Regelungen
+    - Bei Fragen zu kantonalen Zürich spezifischen Regelungen
     - Bei Fragen zu Steuertarifen, Abzugslimiten oder gesetzlichen Fristen
     - Wenn lokale Dokumente keine eindeutige Antwort liefern
     Nicht nötig bei: allgemeinen Definitionen die lokal vollständig abgedeckt sind.
@@ -143,7 +143,7 @@ def search_steuerbuch(query: str) -> str:
     total_results = search_data.get("numberOfResults", len(entries))
 
     # 2: Titel-Scoring mit rapidfuzz — relevanteste Einträge zuerst laden
-    # partial_ratio prüft ob die Query als Teilstring im Titel vorkommt (toleriert Wortstellung)
+    # partial_ratio prüft ob die Query als Teilstring im Titel vorkommt
     for entry in entries:
         title = entry.get("recordfield-flexdataschemainputftitel", "")
         entry["_score"] = fuzz.partial_ratio(query.lower(), title.lower())

@@ -278,7 +278,7 @@ def start_agent(vector_store: Chroma):
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # 3. Der EINZIGE Chat Input
+    # 3. Chat Input
     if prompt := st.chat_input("Wie kann ich helfen?", key="main_chat"):
         # User-Eingabe anzeigen & speichern
         st.session_state.messages.append({"role": "user", "content": prompt})

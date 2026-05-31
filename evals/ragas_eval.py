@@ -89,7 +89,7 @@ def generate_testset(docs, ragas_llm, ragas_embeddings, testset_size=10):
 
 def load_dataset():
     dataset = Dataset.load(
-        name="data_v4",
+        name="data_v5",
         backend="local/csv",
         root_dir="./evals"
     )
@@ -103,7 +103,7 @@ def next_experiment_name(base: str, folder: str = "evals/experiments") -> str:
 # Diagramm erstellen für die Auswertung von den Experiments
 METRICS = ["answer_accuracy", "faithfulness", "answer_relevancy", "context_precision", "context_recall"]
 
-def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experiments"):
+def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experiments", save: bool = False):
     """Lädt alle Experiment-CSVs und zeigt den Metrik-Verlauf als Liniendiagramm."""
     files = sorted(f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f))
     if not files:
@@ -136,6 +136,12 @@ def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experim
     ax.grid(axis="y", alpha=0.4)
     plt.xticks(rotation=20, ha="right")
     plt.tight_layout()
+
+    if save:
+        save_path = os.path.join(folder, f"{base}_verlauf.png")
+        plt.savefig(save_path, dpi=150)
+        print(f"📊 Diagramm gespeichert: {save_path}")
+
     plt.show()
 
 def run_evaluation(vector_store):
@@ -244,5 +250,5 @@ def run_agent_evaluation(vector_store, agent_fn):
 
 # Experiments als Diagramm plotten wenn ragas_eval.py ausgeführt wird
 if __name__ == "__main__":
-    plot_experiments(base="steuerbot_agent")
+    plot_experiments(base="steuerbot_agent", save=True)
 
