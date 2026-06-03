@@ -37,7 +37,7 @@ LANGFUSE_BASE_URL="..."
 Beim ersten Start wird die ChromaDB automatisch befüllt (Embeddings werden einmalig generiert, ca. 2–7 Minuten). Bei nachfolgenden Starts wird die bestehende DB verwendet.
 
 ```bash
-uv run streamlit run main.py
+uv run streamlit run app.py
 ```
 
 **ChromaDB neu aufbauen** (nach neuen Dokumenten oder Änderungen am Chunking):
@@ -185,12 +185,12 @@ Oftmals ist die Frage des Nutzers nicht präzise formuliert, fehlerhaft oder ent
 #### Agent
 Der Agent ([LangChain](https://docs.langchain.com/oss/python/langchain/agents)) entscheidet kontextabhängig ob das Tool `search_steuerbuch` aufgerufen werden soll. Eine genau Beschreibung mit den entsprechenden Anweisungen sind im Docstring definiert. Über den Systemprompt haben wir die Regeln für das verhalten festgelegt sowie den Tool Aufruf definiert. Zusätzlich sollen zwingend alle Antworten mit einer entsprechenden Quellenangabe versehen werden.
 
-Mit diesen Anweisungen unterdrücken wir auch mögliche Halluzinationen. Wenn keine sinnvollen Informationen für eine eindeutige Antwort gefunden werden, soll das LLM folgendes Antworten: "'Dazu konnte ich keine eindeutige Antwort finden. "
+Mit diesen Anweisungen unterdrücken wir auch mögliche Halluzinationen. Wenn keine sinnvollen Informationen für eine eindeutige Antwort gefunden werden, soll das LLM folgendes Antworten: "Dazu konnte ich keine eindeutige Antwort finden. "
 
 ```python
 LLM: "gpt-4o"
 max_tokens=3000
-temperature=0.2
+temperature=0
 streaming=True
 ```
 
@@ -262,7 +262,6 @@ Insgesamt war der Aufbau der Struktur und der Logik sehr herausfordernd. Für un
 
 ### Technologie-Stack
 
-  
 
 | **Komponente**  | **Technologie**                                                    |
 | --------------- | ------------------------------------------------------------------ |

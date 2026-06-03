@@ -42,10 +42,13 @@ def extract_steuerbuch_urls(messages: list) -> list[str]:
     return list(dict.fromkeys(urls))
 
 #def make_ids(chunks: list[Document]) -> list[str]:
-    return [f"{c.metadata.get('source', 'unknown')}_{i}" for i, c in enumerate(chunks)]
+#   return [f"{c.metadata.get('source', 'unknown')}_{i}" for i, c in enumerate(chunks)]
 
 def make_ids(chunks: list[Document]) -> list[str]:
+    # source + page + content → eindeutig auch bei identischem Inhalt auf verschiedenen Seiten
     return [
-        f"{c.metadata.get('source', 'unknown')}_{hashlib.md5(c.page_content.encode()).hexdigest()[:8]}"
-        for c in chunks
+        hashlib.md5(
+            f"{c.metadata.get('source', 'unknown')}|{c.metadata.get('page', i)}|{c.page_content}".encode()
+        ).hexdigest()
+        for i, c in enumerate(chunks)
     ]

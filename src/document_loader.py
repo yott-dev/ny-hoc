@@ -86,5 +86,18 @@ def split_documents(docs: list[Document]) -> list[Document]:
     # Leere und zu kurze Chunks entfernen (Seitenzahlen, isolierte Überschriften, Leerseiten)
     all_chunks = [c for c in all_chunks if len(c.page_content.strip()) >= 30]
 
-    print(f"✂️  {len(all_chunks)} Chunks erstellt")
-    return all_chunks
+    # Inhaltsduplikate entfernen — gleiche Quelle + gleicher Text → nur einmal speichern
+    # Verhindert doppelte Embeddings und ChromaDB DuplicateIDError
+    seen: set[str] = set()
+    unique_chunks = []
+    for chunk in all_chunks:
+        key = f"{chunk.metadata.get('source', '')}|{chunk.page_content}"
+        if key not in seen:
+            seen.add(key)
+            unique_chunks.append(chunk)
+    removed = len(all_chunks) - len(unique_chunks)
+    if removed:
+        print(f"🔁 {removed} doppelte Chunks entfernt")
+
+    print(f"✂️  {len(unique_chunks)} Chunks erstellt")
+    return unique_chunks
