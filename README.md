@@ -226,7 +226,7 @@ password = "1234"
 
 
 #### Sicherheit und Middleware
-Das Classifier-LLM prüft die Fragen nur auf einen Aspekte. Es sollen nur Fragen mit direktem Bezug zu Steuern beantwortet werden. Das verhindert auch missbräuchliche Fragen zu Bomben oder Waffen und allfällige Prompinjections.
+Das Classifier-LLM prüft die Fragen auf zwei Aspekte. Einerseits sollen nur Fragen mit direktem Bezug zu Steuern beantwortet werden. Anderseits sollen auch missbräuchliche Fragen zu Bomben oder Waffen und allfällige Prompinjections verhindert werden. Damit die Middleware folge Fragen ohne Kontext zum Thema steuern nicht blockiert, wird der Kontext von der vorherigen Antwort mitgegeben.
 
 ```python
 Modell: "gpt-4o-mini"

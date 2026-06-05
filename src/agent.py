@@ -13,7 +13,7 @@ from src.custom_agents import TopicGuardrailMiddleware
 
 def create_agent():
     """Compiles the LangGraph tax agent with active tools and guardrail middleware."""
-    # Neue Tools können hier einfach zur Liste hinzugefügt werden
+    # new tools can easily added here
     tools = [
         search_steuerbuch,  # zh.ch Steuerbuch online
     ]
