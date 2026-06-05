@@ -243,11 +243,11 @@ Die Evaluation verwendet das [RAGAS](https://docs.ragas.io/)-Framework mit 5 Met
 
 | **Metrik**        | letztes Resultat | unser Fazit                                                                                                                                                                                                                          |
 | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| answer_accuracy   | 0.556    | Die meisten Antworten im Testset sind ein Satz lang. Ein Agent der korrekt antwortet, aber ausführlicher formuliert, landet wahrscheinlich bei 0.5 statt 1.0.                                                                        |
-| faithfulness      | 0.883    | Der Agent antwortet in 88% der Fälle ausschliesslich aus den gegebenen Quellen ohne zu halluzinieren. Leider wissen wir nicht, wie wir das Testergebnis weiter optimieren könnten ohne einen Kompromiss im System-Prompt einzugehen. |
-| answer_relevancy  | 0.829    | Die Antworten beantworten in den meisten Fällen die gestellte Frage. Nur 1 Frage unter 0.5. Mittelwert von 0.829 deutet darauf hin, dass der Agent manchmal zu ausschweifend antwortet.                                              |
-| context_precision | 0.751    | 12 von 50 Fragen haben Precision unter 0.5. Das heisst, unter den gefundenen Chunks sind viele irrelevante dabei. Hier machen wir ein Trade-Off                                                                                      |
-| context_recall    | 0.898    | Werden alle relevanten Infos gefunden?                                                                                                                                                                                               |
+| answer_accuracy   | 0.609    | Die meisten Antworten im Testset sind ein Satz lang. Ein Agent der korrekt antwortet, aber ausführlicher formuliert, landet wahrscheinlich bei 0.5 statt 1.0.                                                                        |
+| faithfulness      | 0.718    | Der Agent antwortet in 88% der Fälle ausschliesslich aus den gegebenen Quellen ohne zu halluzinieren. Leider wissen wir nicht, wie wir das Testergebnis weiter optimieren könnten ohne einen Kompromiss im System-Prompt einzugehen. |
+| answer_relevancy  | 0.876    | Die Antworten beantworten in den meisten Fällen die gestellte Frage. Nur 1 Frage unter 0.5. Mittelwert von 0.829 deutet darauf hin, dass der Agent manchmal zu ausschweifend antwortet.                                              |
+| context_precision | 0.694    | 12 von 50 Fragen haben Precision unter 0.5. Das heisst, unter den gefundenen Chunks sind viele irrelevante dabei. Hier machen wir ein Trade-Off                                                                                      |
+| context_recall    | 0.909    | Die relevanten Infos werden fast immer gefunden.                                                                                                                                                                                               |
 
 Anfangs haben wir versucht das Testset mit RAGAS erstellen lassen, was leider aber immer wieder zu Fehlermeldungen geführt hat. Darum haben wir schlussendlich das Testset von Claude erstellen lassen. Es enthält 50 Fragen aus 12 Themenkategorien (Steuerpflicht, Einkommen, Abzüge, Tabellen, ESTV-Kreisschreiben, Buch, etc.).
 
@@ -257,6 +257,8 @@ Leide haben wir anfangs die Test-Ergebnisse immer wieder in einer Datei übersch
 ```bash
 uv run python evals/ragas_eval.py
 ```
+
+![Evaluation Metrics Verlauf](evals/experiments/steuerbot_agent_verlauf.png)
 
 Insgesamt haben wir an den verschiendensten Parametern (Anzahl Token, overlap, temperature, chunk size, top-k) geschraubt, um die Zuverlässigkeit des Chatbots zu erhöhen. Vieles ging über das wiederholte überarbeiten und testen des System-Prompts und der Docstrings. Ein weiteres sehr wichtiges Element war das Überarbeiten der Chunking-Strategie mit dem Querry-Rewriting und dem Reranker. Möglicherweise liegt der niedrige Wert von `answer_accuracy` auch am zu wenig ausführlichen Testset.
 
