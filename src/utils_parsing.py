@@ -18,7 +18,6 @@ def get_langfuse_handler() -> CallbackHandler:
 def extract_local_sources(rag_context: str) -> list[str]:
     """
     Parses structural metadata tags from raw RAG context blocks.
-
     Expected format: '[Quelle: filename.pdf, Seite X, Section Y]'
     Note: Page and section fields are treated as optional patterns.
     """
@@ -61,7 +60,6 @@ def extract_steuerbuch_urls(messages: list[BaseMessage]) -> list[str]:
 def make_ids(chunks: list[Document]) -> list[str]:
     """
     Generates deterministic MD5 hashes to serve as stable vector store chunk IDs.
-
     Combines source pathing, page metadata, and core page content strings
     to protect against key collisions.
     """

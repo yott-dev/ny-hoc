@@ -3,24 +3,24 @@ from dotenv import load_dotenv
 load_dotenv()
 import html2text
 from bs4 import BeautifulSoup
+from typing import Any
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter, MarkdownHeaderTextSplitter
 from langchain_core.documents import Document
-from typing import List, Set
 from src.config import PDF_DIR, MD_DIR, HTML_DIR, CHUNK_OVERLAP, CHUNK_SIZE, TABLES_FOLDER_NAME, MIN_CHUNK_LENGTH
 
 
-def _load_pdfs() -> List[Document]:
-    """Parses all PDFs using pymupdf4llm, preserving page metadata."""
-    docs: List[Document] = []
+def _load_pdfs() -> list[Document]:
+    """Parses all PDFs using pymupdf4llm while preserving page metadata."""
+    docs: list[Document] = []
     if not PDF_DIR.exists():
         return docs
 
     for pdf_path in PDF_DIR.rglob("*.pdf"):
-        pages = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
+        pages: list[dict[str, Any]] = pymupdf4llm.to_markdown(str(pdf_path), page_chunks=True)
         for i, page in enumerate(pages):
-            meta = page.get("metadata", {})
-            page_num = meta.get("page", meta.get("page_number", i + 1))
+            meta: dict[str, Any] = page.get("metadata", {})
+            page_num: int = meta.get("page", meta.get("page_number", i + 1))
 
             docs.append(Document(
                 page_content=page["text"],
@@ -33,9 +33,9 @@ def _load_pdfs() -> List[Document]:
     return docs
 
 
-def _load_htmls() -> List[Document]:
-    """Parses HTML files, strips boilerplates (nav, footer), and converts to Markdown."""
-    docs: List[Document] = []
+def _load_htmls() -> list[Document]:
+    """Parses HTML files, strips boilerplate components, and converts content to Markdown."""
+    docs: list[Document] = []
     if not HTML_DIR.exists():
         return docs
 
@@ -60,9 +60,9 @@ def _load_htmls() -> List[Document]:
     return docs
 
 
-def _load_mds() -> List[Document]:
-    """Reads native Markdown files directly without conversion."""
-    docs: List[Document] = []
+def _load_mds() -> list[Document]:
+    """Reads native Markdown files directly from disk without format conversion."""
+    docs: list[Document] = []
     if not MD_DIR.exists():
         return docs
 
@@ -74,14 +74,9 @@ def _load_mds() -> List[Document]:
     return docs
 
 
-def load_documents() -> List[Document]:
-    """
-    Ingests and normalizes PDFs, HTML, and Markdown files into structured Documents.
-
-    Returns:
-        List[Document]: A consolidated list of raw, un-chunked document sections.
-    """
-    docs: List[Document] = []
+def load_documents() -> list[Document]:
+    """Ingests and normalizes PDFs, HTML, and Markdown files into a consolidated list of raw sections."""
+    docs: list[Document] = []
 
     docs.extend(_load_pdfs())
     docs.extend(_load_htmls())
@@ -91,13 +86,12 @@ def load_documents() -> List[Document]:
     return docs
 
 
-def _deduplicate_chunks(chunks: List[Document]) -> List[Document]:
-    """Removes structurally identical chunks based on source and content signature."""
-    seen: Set[str] = set()
-    unique_chunks: List[Document] = []
+def _deduplicate_chunks(chunks: list[Document]) -> list[Document]:
+    """Removes structurally identical document chunks based on their source and content signature."""
+    seen: set[str] = set()
+    unique_chunks: list[Document] = []
 
     for chunk in chunks:
-        # Create a unique structural hash-key representation
         key = f"{chunk.metadata.get('source', '')}|{chunk.page_content}"
         if key not in seen:
             seen.add(key)
@@ -109,17 +103,10 @@ def _deduplicate_chunks(chunks: List[Document]) -> List[Document]:
     return unique_chunks
 
 
-def split_documents(docs: List[Document]) -> List[Document]:
+def split_documents(docs: list[Document]) -> list[Document]:
     """
     Executes a two-pass chunking strategy using Markdown headers and character constraints.
-
-    Protects semantic table structures from breaking up and clears noise.
-
-    Args:
-        docs (List[Document]): Consolidated raw document segments.
-
-    Returns:
-        List[Document]: Deduplicated, clean, and length-bounded document chunks.
+    Bypasses secondary splitting for structural tables to preserve row context and filters out noise.
     """
     md_splitter = MarkdownHeaderTextSplitter(
         headers_to_split_on=[("#", "h1"), ("##", "h2"), ("###", "h3")],
@@ -132,22 +119,19 @@ def split_documents(docs: List[Document]) -> List[Document]:
         separators=["\n\n", "\n", ".", " "]
     )
 
-    all_chunks: List[Document] = []
+    all_chunks: list[Document] = []
 
     for doc in docs:
         header_chunks = md_splitter.split_text(doc.page_content)
 
-        # Propagate original metadata mapping down to every generated sub-chunk
         for chunk in header_chunks:
             chunk.metadata.update(doc.metadata)
 
-        # Bypass secondary split for structural tables to preserve row contexts
         if doc.metadata.get("folder") == TABLES_FOLDER_NAME:
             all_chunks.extend(header_chunks)
         else:
             all_chunks.extend(char_splitter.split_documents(header_chunks))
 
-    # Filter out empty pages, noise or isolated trailing headings
     clean_chunks = [c for c in all_chunks if len(c.page_content.strip()) >= MIN_CHUNK_LENGTH]
     unique_chunks = _deduplicate_chunks(clean_chunks)
 

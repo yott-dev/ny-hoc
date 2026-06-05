@@ -11,7 +11,6 @@ load_dotenv()
 def create_vector_store_with_embeddings() -> Chroma:
     """
     Initializes a Chroma vector store instance using OpenAI's high-dimensional embeddings.
-
     Configures the under-the-hood vector space to use cosine similarity distances.
     """
     embeddings = OpenAIEmbeddings(model="text-embedding-3-large")

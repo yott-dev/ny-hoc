@@ -6,16 +6,13 @@ from sentence_transformers import CrossEncoder
 from src.config import TOP_K_RERANKED, MULTI_QUERY_COUNT, SIMILARITY_SEARCH_K
 
 
-
 # Lazy-loaded singletons for memory efficiency
 _query_llm = init_chat_model("gpt-4o-mini", model_provider="openai", temperature=0)
 _reranker: CrossEncoder | None = None
 
 
 def _get_reranker() -> CrossEncoder:
-    """
-    Thread-safe style lazy initializer for the CrossEncoder reranking model.
-    """
+    """Thread-safe style lazy initializer for the CrossEncoder reranking model."""
     global _reranker
     if _reranker is None:
         _reranker = CrossEncoder("cross-encoder/msmarco-MiniLM-L12-en-de-v1")
@@ -23,9 +20,7 @@ def _get_reranker() -> CrossEncoder:
 
 
 def generate_queries(question: str, n: int = MULTI_QUERY_COUNT) -> list[str]:
-    """
-    Generates n alternative search queries optimized for Swiss tax domain terminology.
-    """
+    """Generates alternative search queries optimized for Swiss tax domain terminology."""
     prompt = (
         f"Du bist ein Schweizer Steuerrecht-Experte. "
         f"Formuliere {n} alternative Suchanfragen für folgende Frage. "
@@ -42,12 +37,10 @@ def generate_queries(question: str, n: int = MULTI_QUERY_COUNT) -> list[str]:
 
 def retrieve_local_context(query: str, vector_store: Chroma) -> tuple[str, list[Document]]:
     """
-    Executes a multi-stage retrieval pipeline: Multi-Query -> Vector Search -> Reranking.
+    Executes a multi-stage retrieval pipeline consisting of Multi-Query, Vector Search, and Reranking.
 
-    Returns:
-        tuple[str, list[Document]]: 
-            - A formatted string block of context injected into the user prompt.
-            - A list of raw top-scoring Documents used for downstream RAGAS evaluation.
+    Returns a formatted string block of context for the prompt injection and a raw list of top-scoring
+    documents dedicated for downstream RAGAS evaluation.
     """
     alt_queries = generate_queries(query, n=MULTI_QUERY_COUNT)
     all_queries = [query] + alt_queries
