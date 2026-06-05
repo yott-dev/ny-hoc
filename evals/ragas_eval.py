@@ -18,12 +18,12 @@ from langchain_core.language_models import BaseChatModel
 
 from ragas import experiment, Dataset
 from ragas.testset import TestsetGenerator
-from ragas.metrics.collections import AnswerAccuracy, Faithfulness, AnswerRelevancy, ContextPrecision, ContextRecall
+from ragas.metrics.collections import AnswerAccuracy, AnswerCorrectness, Faithfulness, AnswerRelevancy, ContextPrecision, ContextRecall
 from ragas.llms import llm_factory
 from ragas.embeddings.base import embedding_factory
 
 # Global metric inventory schema for historical plotting tracking routines
-METRICS = ["answer_accuracy", "faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+METRICS = ["answer_accuracy", "answer_correctness", "faithfulness", "answer_relevancy", "context_precision", "context_recall"]
 
 
 def ask_chatbot(query: str, vector_store: Chroma, llm: BaseChatModel) -> tuple[str, list[str]]:
@@ -64,42 +64,12 @@ def ask_chatbot(query: str, vector_store: Chroma, llm: BaseChatModel) -> tuple[s
     return answer, contexts
 
 
-def generate_testset(docs: list[Document], ragas_llm: Any, ragas_embeddings: Any,
-                     testset_size: int = 10) -> pd.DataFrame:
-    """
-    Generates a synthetic testing evaluation set from provided LangChain text documents.
-    """
-    csv_path = "evals/datasets/data.csv"
-
-    if os.path.exists(csv_path):
-        print("✅ Testset already exists locally. Loading file...")
-        return pd.read_csv(csv_path)
-
-    print("🔄 Generating a new synthetic Ragas testset tracking frame...")
-
-    generator = TestsetGenerator(
-        llm=ragas_llm,
-        embedding_model=ragas_embeddings
-    )
-
-    testset = generator.generate_with_langchain_docs(
-        docs,
-        testset_size=testset_size,
-    )
-
-    df = testset.to_pandas()
-    df.to_csv(csv_path, index=False)
-    print("✅ Synthetic testset stored successfully.")
-
-    return df
-
-
 def load_dataset() -> Dataset:
     """
     Loads the persistent evaluation dataset frame from local storage boundaries.
     """
     dataset = Dataset.load(
-        name="data_v5",
+        name="data_v6",
         backend="local/csv",
         root_dir="./evals"
     )
@@ -113,12 +83,17 @@ def next_experiment_name(base: str, folder: str = "evals/experiments") -> str:
     existing = [f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f)]
     return f"{base}_v{len(existing) + 1}"
 
+# Diagramm erstellen für die Auswertung von den Experiments
+METRICS = ["answer_accuracy", "answer_correctness", "faithfulness", "answer_relevancy", "context_precision", "context_recall"]
 
 def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experiments", save: bool = False) -> None:
     """
     Loads all saved historical experiment csv metrics and plots development trends via a line graph.
     """
-    files = sorted(f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f))
+    files = sorted(
+        (f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f)),
+        key=lambda f: int(re.search(r"_v(\d+)\.csv$", f).group(1))
+    )
     if not files:
         print("❌ No historical experiment datasets found matching specifications.")
         return
@@ -173,6 +148,7 @@ def run_evaluation(vector_store: Chroma) -> None:
     )
 
     answer_accuracy = AnswerAccuracy(llm=llm)
+    answer_correctness = AnswerCorrectness(llm=llm, embeddings=embeddings)
     faithfulness = Faithfulness(llm=llm)
     answer_relevancy = AnswerRelevancy(llm=llm, embeddings=embeddings)
     context_precision = ContextPrecision(llm=llm)
@@ -184,8 +160,9 @@ def run_evaluation(vector_store: Chroma) -> None:
     async def run_experiment(row: dict[str, Any]) -> dict[str, Any]:
         answer, contexts = ask_chatbot(row["user_input"], vector_store, langchain_llm)
 
-        accuracy, faith, relevancy, precision, recall = await asyncio.gather(
+        accuracy, correctness, faith, relevancy, precision, recall = await asyncio.gather(
             answer_accuracy.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
+            answer_correctness.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
             faithfulness.ascore(user_input=row["user_input"], response=answer, retrieved_contexts=contexts),
             answer_relevancy.ascore(user_input=row["user_input"], response=answer),
             context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
@@ -199,6 +176,7 @@ def run_evaluation(vector_store: Chroma) -> None:
             "reference": row["reference"],
             "response": answer,
             "answer_accuracy": accuracy.value,
+            "answer_correctness": correctness.value,
             "faithfulness": faith.value,
             "answer_relevancy": relevancy.value,
             "context_precision": precision.value,
@@ -227,6 +205,7 @@ def run_agent_evaluation(vector_store: Chroma, agent_fn: Callable[
     )
 
     answer_accuracy = AnswerAccuracy(llm=llm)
+    answer_correctness = AnswerCorrectness(llm=llm, embeddings=embeddings)
     faithfulness = Faithfulness(llm=llm)
     answer_relevancy = AnswerRelevancy(llm=llm, embeddings=embeddings)
     context_precision = ContextPrecision(llm=llm)
@@ -244,8 +223,9 @@ def run_agent_evaluation(vector_store: Chroma, agent_fn: Callable[
         tool_texts = [msg.content for msg in result["messages"] if isinstance(msg, ToolMessage)]
         contexts = doc_contexts + tool_texts
 
-        accuracy, faith, relevancy, precision, recall = await asyncio.gather(
+        accuracy, correctness, faith, relevancy, precision, recall = await asyncio.gather(
             answer_accuracy.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
+            answer_correctness.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
             faithfulness.ascore(user_input=row["user_input"], response=answer, retrieved_contexts=contexts),
             answer_relevancy.ascore(user_input=row["user_input"], response=answer),
             context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
@@ -259,6 +239,7 @@ def run_agent_evaluation(vector_store: Chroma, agent_fn: Callable[
             "reference": row["reference"],
             "response": answer,
             "answer_accuracy": accuracy.value,
+            "answer_correctness": correctness.value,
             "faithfulness": faith.value,
             "answer_relevancy": relevancy.value,
             "context_precision": precision.value,

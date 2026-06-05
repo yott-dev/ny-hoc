@@ -25,7 +25,7 @@ BATCH_SIZE = 500
 agent_llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
-    max_tokens=3000,
+    max_tokens=500,
     temperature=0,
     #for streaming
     streaming=True

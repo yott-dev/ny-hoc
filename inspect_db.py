@@ -12,3 +12,5 @@ for doc, meta in zip(results["documents"], results["metadatas"]):
     print("---")
 
 print(f"\nTotal Chunks im Store: {vector_store._collection.count()}")
+
+

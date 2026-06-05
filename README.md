@@ -6,7 +6,7 @@ Dozent: Marcel Amsler
 
 # Steuer-Chatbot für den Kanton Zürich
 
-Agentic-RAG-Chatbot für das Zürcher Steuerrecht, entwickelt im Rahmen des Moduls Hands-on Chatbot an der OST.
+Agentic-RAG-Chatbot für das Zürcher Steuerrecht wurde im Rahmen des Moduls Hands-on Chatbot an der OST entwickelt.
 
 Der Chatbot beantwortet Fragen zum Steuerrecht 2025 und hilft bei der Opimierung der Steuern auf Basis lokaler Rechtsdokumente, Steuertipps, einem Ratgeberbuch (PDFs, HTML, 
 Markdown) sowie dem Online-Steuerbuch des Kantons Zürich (zh.ch). 
@@ -28,6 +28,7 @@ Markdown) sowie dem Online-Steuerbuch des Kantons Zürich (zh.ch).
 uv sync
 
 # .env ausfüllen: 
+OPENAI_API_KEY="..."
 LANGFUSE_SECRET_KEY="..."
 LANGFUSE_PUBLIC_KEY="..."
 LANGFUSE_BASE_URL="..."
@@ -37,7 +38,7 @@ LANGFUSE_BASE_URL="..."
 Beim ersten Start wird die ChromaDB automatisch befüllt (Embeddings werden einmalig generiert, ca. 2–7 Minuten). Bei nachfolgenden Starts wird die bestehende DB verwendet.
 
 ```bash
-uv run streamlit run app.py
+uv run streamlit run main.py
 ```
 
 **ChromaDB neu aufbauen** (nach neuen Dokumenten oder Änderungen am Chunking):
@@ -74,7 +75,7 @@ Bei der Entwicklung der einzelnen Funktionen haben wir uns stark an der in der V
 ---
 
 ### Datenquellen und -verarbeitung
-Da wir anfangs keine Erfahrungen mit der Konzeption eines RAG Chatbots hatten, stellte die Identifikation der relevanten Datenquellen eine initiale Herausforderung dar. Um die Antwortqualität des Modells zu verbessern, haben wir den Fokus auf die Steuergesetzgebung 2025 des Bundes sowie des Kantons Zürich gelegt. Die Suche nach vertrauenswürdigen und detaillierten Steuerinformationen gestaltete sich aufgrund der limitierten Verfügbarkeit kostenloser Quellen als komplex. Unsere Datenbasis setzt sich aus folgenden Quellen zusammen:
+Da wir anfangs keine Erfahrungen mit der Konzeption eines RAG Chatbots hatten, stellte die Identifikation der relevanten Datenquellen eine initiale Herausforderung dar. Um die Antwortqualität des Modells zu verbessern, haben wir den Fokus auf die Steuergesetzgebung 2025 des Bundes sowie des Kantons Zürich gelegt. Die Suche nach vertrauenswürdigen und detaillierten Steuerinformationen gestaltete sich aufgrund der limitierten Verfügbarkeit kostenloser Quellen als schwierig. Unsere Datenbasis setzt sich aus folgenden Quellen zusammen:
 
 | **Format**   | **Inhalt**                                                                                                                 | **Typ**               |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------- | --------------------- |
@@ -216,7 +217,7 @@ password = "1234"
 
 
 #### Sicherheit und Middleware
-Das Classifier-LLM prüft die Fragen auf zwei Aspekte. Einerseits sollen nur Fragen mit direktem Bezug zu Steuern beantwortet werden. Das verhindert auch missbräuchliche Fragen zu Bomben oder Waffen. Zum anderen werden Fragen mit persönlichen Daten blockiert.
+Das Classifier-LLM prüft die Fragen nur auf einen Aspekte. Es sollen nur Fragen mit direktem Bezug zu Steuern beantwortet werden. Das verhindert auch missbräuchliche Fragen zu Bomben oder Waffen und allfällige Prompinjections.
 
 ```python
 Modell: "gpt-4o-mini"
@@ -231,7 +232,7 @@ temperature: 0
 
 Die Evaluation verwendet das [RAGAS](https://docs.ragas.io/)-Framework mit 5 Metriken:
 
-| **Metrik**        | Resultat | unser Fazit                                                                                                                                                                                                                          |
+| **Metrik**        | letztes Resultat | unser Fazit                                                                                                                                                                                                                          |
 | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | answer_accuracy   | 0.556    | Die meisten Antworten im Testset sind ein Satz lang. Ein Agent der korrekt antwortet, aber ausführlicher formuliert, landet wahrscheinlich bei 0.5 statt 1.0.                                                                        |
 | faithfulness      | 0.883    | Der Agent antwortet in 88% der Fälle ausschliesslich aus den gegebenen Quellen ohne zu halluzinieren. Leider wissen wir nicht, wie wir das Testergebnis weiter optimieren könnten ohne einen Kompromiss im System-Prompt einzugehen. |
@@ -243,20 +244,20 @@ Anfangs haben wir versucht das Testset mit RAGAS erstellen lassen, was leider ab
 
 Leide haben wir anfangs die Test-Ergebnisse immer wieder in einer Datei überschrieben. So fehlt uns leider ein Grossteil des Entwicklungsprozess in den Daten. Inzwischen wird jedes Evaluations-Experiment versioniert gespeichert. Den Metrik-Verlauf über alle Versionen kann über folgenden Befehl angezeigt werden:
 
+
 ```bash
 uv run python evals/ragas_eval.py
 ```
 
-Insgesamt haben wir an den verschiendensten Stellschrauben gedreht, um die Zuverlässigkeit des Chatbots zu erhöhen. Vieles ging über das wiederholte überarbeiten und testen der verschiedenen System-Prompts und Docstring. Ein weiteres sehr wichtiges Element war das Überarbeiten der Chunking-Strategie mit dem Querry-Rewriting und dem Reranker. 
+Insgesamt haben wir an den verschiendensten Parametern (Anzahl Token, overlap, temperature, chunk size, top-k) geschraubt, um die Zuverlässigkeit des Chatbots zu erhöhen. Vieles ging über das wiederholte überarbeiten und testen des System-Prompts und der Docstrings. Ein weiteres sehr wichtiges Element war das Überarbeiten der Chunking-Strategie mit dem Querry-Rewriting und dem Reranker. Möglicherweise liegt der niedrige Wert von `answer_accuracy` auch am zu wenig ausführlichen Testset.
 
 ---
 
 ### Fazit und Reflektion
-Alles in allem funktioniert unser Chatbot zuverlässig und liefert präzise Antworten zu Steuerfragen und gibt die die passenden Quellen an. Manchmal werden noch die falschen Chunks für die Antwort gefunden. Darum sind wir überzeugt, dass mit einer anderen Architektur oder weiteren Optimierungen noch bessere Ergebnisse erzielt und eventuell auch Answer Accuracy verbessert werden. Leider fehlt uns aber hier etwas die Erfahrung.
+Alles in allem funktioniert unser Chatbot zuverlässig und liefert präzise Antworten zu Steuerfragen und gibt die passenden Quellen an. Manchmal werden noch die falschen Chunks für die Antwort gefunden. Darum sind wir überzeugt, dass mit einer anderen Architektur oder weiteren Optimierungen noch bessere Ergebnisse erzielt und eventuell auch Answer Accuracy verbessert werden. Leider fehlt uns aber hier etwas die Erfahrung.
 
-Insgesamt war der Aufbau der Struktur und der Logik sehr herausfordernd. Für uns war die Entwicklung sehr komplex, damit alle Komponenten sauber funktionieren und entsprechend verknüpft sind. Insgesamt sind wir aber mit dem aktuellen Stand zufrieden und der Chatbot erfüllt bei realen Use-Cases in unserem Alltag sein Zweck.
--Angetroffene Bugs
--Optimierungen
+Insgesamt war der Aufbau der Struktur und der Logik sehr herausfordernd. Für uns war die Entwicklung sehr komplex, damit alle Komponenten sauber funktionieren und entsprechend verknüpft sind. Insgesamt sind wir aber mit dem aktuellen Stand zufrieden und der Chatbot erfüllt bei realen Use-Cases sein Zweck.
+
 
 ---
 
