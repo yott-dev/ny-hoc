@@ -16,7 +16,7 @@ CHUNK_SIZE = 750
 CHUNK_OVERLAP = 250
 MIN_CHUNK_LENGTH = 30
 
-TOP_K_RERANKED = 6
+TOP_K_RERANKED = 8
 MULTI_QUERY_COUNT = 3
 SIMILARITY_SEARCH_K = 5
 
@@ -25,7 +25,7 @@ BATCH_SIZE = 500
 agent_llm = init_chat_model(
     "gpt-4o",
     model_provider="openai",
-    max_tokens=500,
+    max_tokens=3000,
     temperature=0,
     streaming=True
 )

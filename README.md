@@ -58,6 +58,15 @@ username = "..."
 password = "..."
 ```
 
+### Präsentation starten
+Die Präsentation haben wir direkt im Code mit slidev umgesetzt. Slidev wird über die Console mit folgendem Befehlen gestartet:
+
+```bash
+cd presentation
+npm run dev
+```
+
+
 ---
 
 ### Einleitung und Ziele
