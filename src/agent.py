@@ -5,23 +5,14 @@ from langchain_chroma import Chroma
 from langchain.agents import create_agent as lc_create_agent
 from src.config import agent_llm
 from langchain_core.messages import AIMessageChunk
-
-#-----langfuse------
 from src.utils_parsing import get_langfuse_handler
-
-#----Tools-----
 from src.tools import search_steuerbuch
-
-#----Retriever (RAG-First Pipeline)----
 from src.retriever import retrieve_local_context
-
-#------ui-------
 import streamlit as st
-
-#---- custom middleware
 from src.custom_agents import TopicGuardrailMiddleware
 
 def create_agent():
+    """Compiles the LangGraph tax agent with active tools and guardrail middleware."""
     # Neue Tools können hier einfach zur Liste hinzugefügt werden
     tools = [
         search_steuerbuch,  # zh.ch Steuerbuch online
@@ -47,14 +38,15 @@ def create_agent():
     "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n"
     )
 
-    # lc_create_agent baut den kompletten Agent-Loop intern auf
     return lc_create_agent(agent_llm, tools, middleware=middleware, system_prompt=system_prompt, debug=False)
 
 @st.cache_resource(hash_funcs={Chroma: lambda _: None})
-def get_cached_agent(vector_store):  # vector_store als Cache-Key, nicht direkt genutzt
+def get_cached_agent(vector_store: Chroma):
+    """Caches the compiled agent graph in Streamlit using the vector store as a cache key dependency."""
     return create_agent()
 
-def get_agent_response(query, vector_store, chat_history):
+def get_agent_response(query: str, vector_store: Chroma, chat_history:list) -> tuple:
+    """Executes a synchronous, blocking invocation of the agent with injected RAG context."""
     agent = get_cached_agent(vector_store)
     rag_context, rag_docs = retrieve_local_context(query, vector_store)
     messages = chat_history + [HumanMessage(
@@ -68,26 +60,26 @@ def get_agent_response(query, vector_store, chat_history):
     return result, rag_context, rag_docs
 
 
-def get_agent_response_stream(query, vector_store, chat_history):
+def get_agent_response_stream(query: str, vector_store: Chroma, chat_history: list) -> list:
+    """Yields real-time text tokens from the agent's model node during execution."""
     agent = get_cached_agent(vector_store)
     rag_context, _ = retrieve_local_context(query, vector_store)
     messages = chat_history + [HumanMessage(
         content=f"Lokale Dokumente:\n{rag_context}\n\nFrage: {query}"
     )]
 
-    collected_messages = []  # sammelt alle Messages während dem Stream für URL-Extraktion
+    collected_messages = []
 
     def stream_generator():
         for chunk in agent.stream(
                 {"messages": messages},
                 #config={"callbacks": [get_langfuse_handler()]},
-                stream_mode="messages"  # ← Token-by-Token Modus
+                stream_mode="messages"
         ):
             if isinstance(chunk, tuple):
                 #for logging
                 message, metadata = chunk
                 collected_messages.append(message)
-                #pprint(f"Message: {message}\n Metadata: {metadata}")
                 if hasattr(message, "content") and message.content and metadata.get("langgraph_node") == 'model':
                     if isinstance(message, AIMessageChunk):
                         yield message.content

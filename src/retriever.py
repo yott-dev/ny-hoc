@@ -1,23 +1,31 @@
+import os
 from langchain.chat_models import init_chat_model
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
+from src.config import TOP_K_RERANKED, MULTI_QUERY_COUNT, SIMILARITY_SEARCH_K
 
+
+
+# Lazy-loaded singletons for memory efficiency
 _query_llm = init_chat_model("gpt-4o-mini", model_provider="openai", temperature=0)
-
 _reranker: CrossEncoder | None = None
-TOP_K_RERANKED = 6
 
 
 def _get_reranker() -> CrossEncoder:
+    """
+    Thread-safe style lazy initializer for the CrossEncoder reranking model.
+    """
     global _reranker
     if _reranker is None:
         _reranker = CrossEncoder("cross-encoder/msmarco-MiniLM-L12-en-de-v1")
     return _reranker
 
 
-def generate_queries(question: str, n: int = 3) -> list[str]:
-    """Generiert n alternative Suchanfragen in Steuer-Fachsprache via gpt-4o-mini."""
+def generate_queries(question: str, n: int = MULTI_QUERY_COUNT) -> list[str]:
+    """
+    Generates n alternative search queries optimized for Swiss tax domain terminology.
+    """
     prompt = (
         f"Du bist ein Schweizer Steuerrecht-Experte. "
         f"Formuliere {n} alternative Suchanfragen für folgende Frage. "
@@ -33,21 +41,24 @@ def generate_queries(question: str, n: int = 3) -> list[str]:
 
 
 def retrieve_local_context(query: str, vector_store: Chroma) -> tuple[str, list[Document]]:
-    """RAG-First Pipeline: Multi-Query → ChromaDB → Reranking.
-
-    Gibt (formatierter Kontext-String für den Agent, Top-Dokumente für RAGAS) zurück.
-    Der String wird direkt in die HumanMessage eingefügt.
-    Die Dokument-Liste ermöglicht saubere context_precision/recall Messung in der Evaluation.
     """
-    alt_queries = generate_queries(query, n=3)
+    Executes a multi-stage retrieval pipeline: Multi-Query -> Vector Search -> Reranking.
+
+    Returns:
+        tuple[str, list[Document]]: 
+            - A formatted string block of context injected into the user prompt.
+            - A list of raw top-scoring Documents used for downstream RAGAS evaluation.
+    """
+    alt_queries = generate_queries(query, n=MULTI_QUERY_COUNT)
     all_queries = [query] + alt_queries
-    print(f"🔍 Multi-Query: {all_queries}")
+    print(f"🔍 Multi-Query Expansion: {all_queries}")
 
     seen_ids: set[str] = set()
     all_results: list[Document] = []
 
+    # Two-pass deduplication layout during cross-query vector fetching
     for q in all_queries:
-        for doc in vector_store.similarity_search(q, k=5):
+        for doc in vector_store.similarity_search(q, k=SIMILARITY_SEARCH_K):
             doc_id = (
                 f"{doc.metadata.get('source')}_"
                 f"{doc.metadata.get('page')}_"
@@ -60,21 +71,26 @@ def retrieve_local_context(query: str, vector_store: Chroma) -> tuple[str, list[
     if not all_results:
         return "Keine relevanten Dokumente in der lokalen Datenbank gefunden.", []
 
-    print(f"📄 {len(all_results)} einzigartige Chunks (aus {len(all_queries)} Queries)")
+    print(f"📄 Found {len(all_results)} unique chunks across {len(all_queries)} queries.")
 
+    # Compute semantic alignment scores via cross-encoder
     scores = _get_reranker().predict([(query, doc.page_content) for doc in all_results])
     ranked = sorted(zip(scores, all_results), key=lambda x: x[0], reverse=True)
     top_docs = [doc for _, doc in ranked[:TOP_K_RERANKED]]
-    print(f"🏆 Nach Reranking: {len(top_docs)} Chunks behalten")
 
+    print(f"🏆 Reranking complete: Keeping top {len(top_docs)} chunks.")
+
+    # Format the context blocks with legal metadata citations for the agent's system prompt
     parts = []
     for doc in top_docs:
         meta = doc.metadata
         section = meta.get("h2") or meta.get("h1") or ""
         section_str = f", {section}" if section else ""
-        page_str = f", Seite {meta.get('page')}" if meta.get("page") is not None else ""
+        page_str = f", Seite {meta.get('page')}" if meta.get('page') is not None else ""
+
         parts.append(
             f"[Quelle: {meta.get('source', '?')}{page_str}{section_str}]\n"
             f"{doc.page_content}"
         )
+
     return "\n\n".join(parts), top_docs

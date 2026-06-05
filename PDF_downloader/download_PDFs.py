@@ -1,27 +1,35 @@
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
 import os
 import re
 import time
+from urllib.parse import urljoin
+import requests
+from bs4 import BeautifulSoup
 
 
 def slugify(text: str) -> str:
-    """Converts text to a filename-safe slug."""
-    replacements = {'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
-                    'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue'}
-    for k, v in replacements.items():
-        text = text.replace(k, v)
+    """
+    Converts raw text into a filename-safe string by replacing German umlauts
+    and stripping away illegal punctuation marks.
+    """
+    replacements = {
+        'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss',
+        'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue'
+    }
+    for key, value in replacements.items():
+        text = text.replace(key, value)
+
     text = re.sub(r'[^\w\s-]', '', text).strip().lower()
     text = re.sub(r'[\s_-]+', '_', text)
     return text[:50].strip('_')
 
 
 def extract_topic(link_text: str) -> str:
-    """Extracts the short topic from the ESTV link text.
+    """
+    Extracts the cleaned topic title from the ESTV circular link string.
 
-    Link text format: 'Kreisschreiben Nr. X: TITLE TITLE vom DATE (Direkte Bundessteuer)PDF...'
-    The title appears twice consecutively without a separator.
+    Expected string layout pattern:
+    'Kreisschreiben Nr. X: TITLE TITLE vom DATE (Direkte Bundessteuer)PDF...'
+    Note: The source website repeats the core title twice without separators.
     """
     colon_idx = link_text.find(':')
     if colon_idx == -1:
@@ -29,7 +37,7 @@ def extract_topic(link_text: str) -> str:
 
     after_colon = link_text[colon_idx + 1:].strip()
 
-    # Entferne den Anhang: "vom DATE (Direkte Bundessteuer)PDF..."
+    # Strip structural trailing tags: "vom DATE (Direkte Bundessteuer)PDF..."
     after_colon = re.sub(r'\s+vom\s+\d{1,2}\.\d{1,2}\.\d{4}.*', '', after_colon)
     after_colon = re.sub(r'\s*\(Direkte Bundessteuer\).*', '', after_colon)
     after_colon = re.sub(r'PDF[\d\.,\s].*', '', after_colon)
@@ -38,35 +46,42 @@ def extract_topic(link_text: str) -> str:
     if not title:
         return ""
 
-    # Der Titeltext wird auf der Seite verdoppelt — kürzestes Präfix finden das sich wiederholt
+    # Deduplicate the mirrored prefix string anomaly caused by the website's HTML layout
     for i in range(1, len(title) // 2 + 1):
         if title[:i] == title[i:i * 2]:
             return title[:i].strip()
 
-    return title[:60].strip()  # Fallback: erste 60 Zeichen
+    return title[:60].strip()  # Fallback boundary limit
 
 
 def download_pdfs(url: str, output_folder: str = "downloads") -> None:
-    """Lädt alle PDFs von einer Webseite herunter, überspringt bereits vorhandene Dateien."""
+    """
+    Scrapes and saves PDF files from the target ESTV document library.
 
-    # Ordner erstellen
+    Skips redundant asset downloads if the calculated file names or raw filenames
+    already exist within the output destination folder.
+    """
     os.makedirs(output_folder, exist_ok=True)
 
-    # Webseiten blocken Anfragen ohne Browser-User-Agent und gibt möglicherweise eine leere oder andere Seite zurück. Daher implementieren wir das:
+    # Web servers routinely block bare connections lacking browser headers
+    # to safeguard against Denial of Service (DoS) scraping floods.
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
     }
 
-    # Webseite laden und parsen
     print(f"Lade Seite: {url}")
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # PDF-Links mit Linktext extrahieren (dict statt set, um Titel zu behalten)
-    pdf_links = {}  # {full_url: topic_slug}
+    # Map tracking entries to isolate duplicates while preserving specific topic strings
+    pdf_links: dict[str, str] = {}  # Format sequence: {full_url: topic_slug}
     for link in soup.find_all("a", href=True):
-        href = link["href"]
+        href: str = link["href"]
         if ".pdf" in href.lower():
             full_url = urljoin(url, href)
             if full_url not in pdf_links:
@@ -75,7 +90,7 @@ def download_pdfs(url: str, output_folder: str = "downloads") -> None:
 
     print(f"Gefunden: {len(pdf_links)} PDFs\n")
 
-    # PDFs herunterladen
+    # Execute binary stream downloads sequentially
     for i, (pdf_url, topic_slug) in enumerate(pdf_links.items(), 1):
         base_name = pdf_url.split("/")[-1].split("?")[0]
         stem, ext = os.path.splitext(base_name)
@@ -95,12 +110,17 @@ def download_pdfs(url: str, output_folder: str = "downloads") -> None:
                 f.write(pdf_response.content)
 
             print(f"[{i}/{len(pdf_links)}] ✓ {filename}")
-            time.sleep(0.3)  # kleine Pause, um den Server nicht zu überlasten
-        except Exception as e:
-            print(f"[{i}/{len(pdf_links)}] ✗ {filename}: {e}")
+
+            # Rate limiting delay block to comply with polite crawling policies
+            time.sleep(0.3)
+        except Exception as error:
+            print(f"[{i}/{len(pdf_links)}] ✗ {filename}: {error}")
 
 
-def main():
+def main() -> None:
+    """
+    Main application entrance script driving target document extraction pipelines.
+    """
     url = "https://www.estv.admin.ch/de/kreisschreiben-direkten-bundessteuer"
     download_pdfs(url, output_folder="ressources/pdf/estv_kreisschreiben")
 

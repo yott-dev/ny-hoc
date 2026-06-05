@@ -1,55 +1,57 @@
-from langchain_core.documents import Document
-from ragas.testset import TestsetGenerator
 import os
 import re
-import pandas as pd
 import asyncio
+import pandas as pd
 import matplotlib.pyplot as plt
-from ragas import experiment, Dataset
-from ragas.metrics.collections import AnswerAccuracy, Faithfulness, AnswerRelevancy, ContextPrecision, ContextRecall
-from ragas.llms import llm_factory
+from pathlib import Path
+from typing import Callable, Any
 from openai import AsyncOpenAI
-from ragas.embeddings.base import embedding_factory
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.messages import ToolMessage
 
-#ask_chatbot
+from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import ToolMessage, BaseMessage
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from langchain_chroma import Chroma
 from langchain.chat_models import init_chat_model
+from langchain_core.language_models import BaseChatModel
 
-# Wird nur von run_evaluation verwendet
-def ask_chatbot(query: str, vector_store: Chroma, llm):
-    # implement retriever
+from ragas import experiment, Dataset
+from ragas.testset import TestsetGenerator
+from ragas.metrics.collections import AnswerAccuracy, Faithfulness, AnswerRelevancy, ContextPrecision, ContextRecall
+from ragas.llms import llm_factory
+from ragas.embeddings.base import embedding_factory
+
+# Global metric inventory schema for historical plotting tracking routines
+METRICS = ["answer_accuracy", "faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+
+
+def ask_chatbot(query: str, vector_store: Chroma, llm: BaseChatModel) -> tuple[str, list[str]]:
+    """
+    Executes a basic baseline RAG chain execution and returns the text response and retrieved context blocks.
+    """
     retriever = vector_store.as_retriever(
         search_type="similarity",
         search_kwargs={"k": 5},
     )
 
-    #search
-    #results_with_scores = vector_store.similarity_search_with_score(query, k=5) delete?
-    #query_score = results_with_scores[0][-1] delete?
-    #search vector store
     retrieve_data = retriever.invoke(query)
-    #save metadata from received chunk for output
-    #metadata = retrieve_data[0].metadata delete?
-    # Contexts für RAGAS extrahieren
     contexts = [doc.page_content for doc in retrieve_data]
-    # Prompt / chain begins
-    # Wenn die Antwort nicht im Kontext steht, sag: "Da bin ich mir nicht sicher...
-    template = ("Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht.\n "
-                "Bei widersprüchlichen Informationen: Priorisiere Dokumente mit neuerem Jahr"
-                "Beantworte alle Fragen auf Deutsch.\n\n"
-                "Dir werden aufbereitete lokale Dokumente als Kontext mitgegeben. "
-                "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n\n"
-                "Rufe das Tool IMMER auf wenn Zweifel bestehen — auch wenn lokale Dokumente vorhanden sind.\n\n"
-                "Wenn keine eindeutige Antwort möglich ist, antworte: "
-                "'Dazu konnte ich keine eindeutige Antwort finden. "
-                "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n\n"
-                "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
-                "Kontext: {context}"
-                "Frage: {question}")
+
+    template = (
+        "Du bist ein Assistent für Steuerberatung in der Schweiz, spezialisiert auf Züricher Steuerrecht.\n "
+        "Bei widersprüchlichen Informationen: Priorisiere Dokumente mit neuerem Jahr"
+        "Beantworte alle Fragen auf Deutsch.\n\n"
+        "Dir werden aufbereitete lokale Dokumente als Kontext mitgegeben. "
+        "Nutze NUR diese als Wissensbasis — ergänze NIEMALS aus dem Gedächtnis.\n\n"
+        "Rufe das Tool IMMER auf wenn Zweifel bestehen — auch wenn lokale Dokumente vorhanden sind.\n\n"
+        "Wenn keine eindeutige Antwort möglich ist, antworte: "
+        "'Dazu konnte ich keine eindeutige Antwort finden. "
+        "Bitte wenden Sie sich an das kantonale Steueramt Zürich.'\n\n"
+        "Beziehe dich in deiner Antwort immer auf die gefundenen Quellen."
+        "Kontext: {context}"
+        "Frage: {question}"
+    )
     prompt = ChatPromptTemplate.from_template(template)
     rag_chain = (
             {"context": retriever, "question": RunnablePassthrough()}
@@ -57,19 +59,23 @@ def ask_chatbot(query: str, vector_store: Chroma, llm):
             | llm
             | StrOutputParser()
     )
-    question = query
-    answer = rag_chain.invoke(question)
+
+    answer = rag_chain.invoke(query)
     return answer, contexts
 
-#generates testset with ragas (not implemented due to rags issues)
-def generate_testset(docs, ragas_llm, ragas_embeddings, testset_size=10):
+
+def generate_testset(docs: list[Document], ragas_llm: Any, ragas_embeddings: Any,
+                     testset_size: int = 10) -> pd.DataFrame:
+    """
+    Generates a synthetic testing evaluation set from provided LangChain text documents.
+    """
     csv_path = "evals/datasets/data.csv"
 
     if os.path.exists(csv_path):
-        print("✅ Testset bereits vorhanden, wird geladen...")
+        print("✅ Testset already exists locally. Loading file...")
         return pd.read_csv(csv_path)
 
-    print("🔄 Generiere neues Testset...")
+    print("🔄 Generating a new synthetic Ragas testset tracking frame...")
 
     generator = TestsetGenerator(
         llm=ragas_llm,
@@ -83,11 +89,15 @@ def generate_testset(docs, ragas_llm, ragas_embeddings, testset_size=10):
 
     df = testset.to_pandas()
     df.to_csv(csv_path, index=False)
-    print("✅ Testset gespeichert")
+    print("✅ Synthetic testset stored successfully.")
 
     return df
 
-def load_dataset():
+
+def load_dataset() -> Dataset:
+    """
+    Loads the persistent evaluation dataset frame from local storage boundaries.
+    """
     dataset = Dataset.load(
         name="data_v5",
         backend="local/csv",
@@ -95,19 +105,22 @@ def load_dataset():
     )
     return dataset
 
+
 def next_experiment_name(base: str, folder: str = "evals/experiments") -> str:
-    """Gibt den nächsten verfügbaren Versionsnamen zurück (z.B. steuerbot_v3)."""
+    """
+    Returns the next incremental iteration version tracking name (e.g., steuerbot_v3).
+    """
     existing = [f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f)]
     return f"{base}_v{len(existing) + 1}"
 
-# Diagramm erstellen für die Auswertung von den Experiments
-METRICS = ["answer_accuracy", "faithfulness", "answer_relevancy", "context_precision", "context_recall"]
 
-def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experiments", save: bool = False):
-    """Lädt alle Experiment-CSVs und zeigt den Metrik-Verlauf als Liniendiagramm."""
+def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experiments", save: bool = False) -> None:
+    """
+    Loads all saved historical experiment csv metrics and plots development trends via a line graph.
+    """
     files = sorted(f for f in os.listdir(folder) if re.match(rf"{re.escape(base)}_v\d+\.csv", f))
     if not files:
-        print("Keine Experiment-Dateien gefunden.")
+        print("❌ No historical experiment datasets found matching specifications.")
         return
 
     records = []
@@ -120,7 +133,7 @@ def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experim
         records.append(row)
 
     summary = pd.DataFrame(records).set_index("version")
-    print("\nMetrik-Übersicht:")
+    print("\n📈 Aggregated Experiment Evaluation History Summary:")
     print(summary.to_string())
 
     fig, ax = plt.subplots(figsize=(10, 5))
@@ -128,9 +141,9 @@ def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experim
         if metric in summary.columns:
             ax.plot(summary.index, summary[metric], marker="o", label=metric)
 
-    ax.set_title(f"Metrik-Verlauf: {base}")
-    ax.set_xlabel("Experiment")
-    ax.set_ylabel("Score (0–1)")
+    ax.set_title(f"Evaluation Metrics Comparison Run Trend: {base}")
+    ax.set_xlabel("Experiment Incremental Runs")
+    ax.set_ylabel("Score Limits (0.00 – 1.00)")
     ax.set_ylim(0, 1)
     ax.legend(loc="lower right")
     ax.grid(axis="y", alpha=0.4)
@@ -140,11 +153,15 @@ def plot_experiments(base: str = "steuerbot_agent", folder: str = "evals/experim
     if save:
         save_path = os.path.join(folder, f"{base}_verlauf.png")
         plt.savefig(save_path, dpi=150)
-        print(f"📊 Diagramm gespeichert: {save_path}")
+        print(f"📊 Tracking comparison visualization exported to: {save_path}")
 
     plt.show()
 
-def run_evaluation(vector_store):
+
+def run_evaluation(vector_store: Chroma) -> None:
+    """
+    Runs an evaluation batch test on the vanilla baseline RAG application chain layout.
+    """
     client = AsyncOpenAI()
     llm = llm_factory("gpt-4o", client=client)
     langchain_llm = init_chat_model("gpt-4o", model_provider="openai")
@@ -155,7 +172,6 @@ def run_evaluation(vector_store):
         interface="modern"
     )
 
-    # Alle Metriken initialisieren
     answer_accuracy = AnswerAccuracy(llm=llm)
     faithfulness = Faithfulness(llm=llm)
     answer_relevancy = AnswerRelevancy(llm=llm, embeddings=embeddings)
@@ -165,16 +181,17 @@ def run_evaluation(vector_store):
     dataset = load_dataset()
 
     @experiment()
-    async def run_experiment(row):
+    async def run_experiment(row: dict[str, Any]) -> dict[str, Any]:
         answer, contexts = ask_chatbot(row["user_input"], vector_store, langchain_llm)
 
-        # Alle Metriken parallel berechnen
         accuracy, faith, relevancy, precision, recall = await asyncio.gather(
             answer_accuracy.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
             faithfulness.ascore(user_input=row["user_input"], response=answer, retrieved_contexts=contexts),
             answer_relevancy.ascore(user_input=row["user_input"], response=answer),
-            context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
-            context_recall.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
+            context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
+                                     reference=row["reference"]),
+            context_recall.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
+                                  reference=row["reference"]),
         )
 
         return {
@@ -189,13 +206,17 @@ def run_evaluation(vector_store):
         }
 
     name = next_experiment_name("steuerbot")
-    print(f"💾 Speichere Experiment als: {name}")
+    print(f"💾 Saving evaluation database file under moniker: {name}")
     results = asyncio.run(run_experiment.arun(dataset, name=name))
     print(results.to_pandas().to_string())
     plot_experiments(base="steuerbot")
 
 
-def run_agent_evaluation(vector_store, agent_fn):
+def run_agent_evaluation(vector_store: Chroma, agent_fn: Callable[
+    [str, Chroma, list[BaseMessage]], tuple[dict[str, Any], str, list[Document]]]) -> None:
+    """
+    Runs an evaluation batch test capturing the custom agent graph orchestration workflow metrics.
+    """
     client = AsyncOpenAI()
     llm = llm_factory("gpt-4o", client=client)
     embeddings = embedding_factory(
@@ -205,7 +226,6 @@ def run_agent_evaluation(vector_store, agent_fn):
         interface="modern"
     )
 
-    # Alle Metriken initialisieren
     answer_accuracy = AnswerAccuracy(llm=llm)
     faithfulness = Faithfulness(llm=llm)
     answer_relevancy = AnswerRelevancy(llm=llm, embeddings=embeddings)
@@ -215,22 +235,23 @@ def run_agent_evaluation(vector_store, agent_fn):
     dataset = load_dataset()
 
     @experiment()
-    async def run_experiment(row):
+    async def run_experiment(row: dict[str, Any]) -> dict[str, Any]:
         result, rag_context, rag_docs = agent_fn(row["user_input"], vector_store, [])
         answer = result["messages"][-1].content
 
-        # Dokument-Objekte direkt verwenden statt String-Split — gibt RAGAS die echten 6 Chunks
+        # Feed Ragas raw page chunks alongside executed ToolMessage contents to evaluate compound grounding
         doc_contexts = [doc.page_content for doc in rag_docs]
         tool_texts = [msg.content for msg in result["messages"] if isinstance(msg, ToolMessage)]
         contexts = doc_contexts + tool_texts
 
-        # Alle 5 Variablen korrekt unpacken
         accuracy, faith, relevancy, precision, recall = await asyncio.gather(
             answer_accuracy.ascore(user_input=row["user_input"], response=answer, reference=row["reference"]),
             faithfulness.ascore(user_input=row["user_input"], response=answer, retrieved_contexts=contexts),
             answer_relevancy.ascore(user_input=row["user_input"], response=answer),
-            context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
-            context_recall.ascore(user_input=row["user_input"], retrieved_contexts=contexts, reference=row["reference"]),
+            context_precision.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
+                                     reference=row["reference"]),
+            context_recall.ascore(user_input=row["user_input"], retrieved_contexts=contexts,
+                                  reference=row["reference"]),
         )
 
         return {
@@ -243,13 +264,13 @@ def run_agent_evaluation(vector_store, agent_fn):
             "context_precision": precision.value,
             "context_recall": recall.value,
         }
+
     name = next_experiment_name("steuerbot_agent")
-    print(f"💾 Speichere Experiment als: {name}")
+    print(f"💾 Saving evaluation agent database file under moniker: {name}")
     results = asyncio.run(run_experiment.arun(dataset, name=name))
     print(results.to_pandas().to_string())
     plot_experiments(base="steuerbot_agent")
 
-# Experiments als Diagramm plotten wenn ragas_eval.py ausgeführt wird
+
 if __name__ == "__main__":
     plot_experiments(base="steuerbot_agent", save=True)
-
