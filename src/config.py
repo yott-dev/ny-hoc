@@ -8,13 +8,13 @@ BASE_RESOURCE_DIR = Path("ressources")
 PDF_DIR = BASE_RESOURCE_DIR / "pdf"
 HTML_DIR = BASE_RESOURCE_DIR / "html"
 MD_DIR = BASE_RESOURCE_DIR / "md"
+TABLES_FOLDER_NAME = "Tabellen"
 
 MAX_HISTORY_PAIRS = 6
 
 CHUNK_SIZE = 750
 CHUNK_OVERLAP = 250
 MIN_CHUNK_LENGTH = 30
-TABLES_FOLDER_NAME = "Tabellen"
 
 TOP_K_RERANKED = 6
 MULTI_QUERY_COUNT = 3
@@ -27,6 +27,5 @@ agent_llm = init_chat_model(
     model_provider="openai",
     max_tokens=500,
     temperature=0,
-    #for streaming
     streaming=True
 )

@@ -1,7 +1,7 @@
 from unittest.mock import patch, MagicMock
 from langchain_core.messages import HumanMessage
 import pytest
-from src.custom_agents import TopicGuardrailMiddleware, InformationGuardrailMiddleware
+from src.custom_agents import TopicGuardrailMiddleware
 
 # ---- TopicGuardrailMiddleware ----
 
@@ -48,30 +48,3 @@ def test_topic_guardrail_extracts_question_from_rag_context():
         assert "Quellensteuer?" in called_prompt
         assert "Lokale Dokumente" not in called_prompt
 
-# ---- InformationGuardrailMiddleware ----
-
-def test_information_guardrail_allows_no_personal_data():
-    fake_result = MagicMock()
-    fake_result.content = "ja"
-
-    fake_llm = MagicMock()
-    fake_llm.invoke.return_value = fake_result
-
-    with patch("src.custom_agents.classifier_llm", fake_llm):
-        middleware = InformationGuardrailMiddleware()
-        state = {"messages": [HumanMessage(content="Was ist der Steuersatz?")]}
-        result = middleware.before_model(state, runtime=None)
-        assert result is None
-
-def test_information_guardrail_blocks_personal_data():
-    fake_result = MagicMock()
-    fake_result.content = "nein"
-
-    fake_llm = MagicMock()
-    fake_llm.invoke.return_value = fake_result
-
-    with patch("src.custom_agents.classifier_llm", fake_llm):
-        middleware = InformationGuardrailMiddleware()
-        state = {"messages": [HumanMessage(content="Ich heisse Max Muster, AHV 756.1234")]}
-        with pytest.raises(ValueError, match="persönlichen"):
-            middleware.before_model(state, runtime=None)

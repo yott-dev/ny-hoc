@@ -81,14 +81,21 @@ def test_search_steuerbuch_returns_results():
     assert "Homeoffice" in result
     assert "zh.ch" in result
 
+
 def test_search_steuerbuch_no_results():
+    """Ensures the tool returns a proper fallback message when the API payload data is empty."""
+
+    # 1. Create a mock object that simulates an empty API response JSON structure
     fake_api_response = MagicMock()
     fake_api_response.json.return_value = {
-        "numberOfResults": 0,
-        "data": []
+        "data": [],
+        "numberOfResults": 0
     }
+    fake_api_response.raise_for_status = MagicMock()
 
+    # 2. Patch the requests.get call inside the tool execution block
     with patch("src.tools.requests.get", return_value=fake_api_response):
         result = search_steuerbuch.invoke({"query": "Unbekannt"})
 
-    assert "Keine Steuerbuch-Einträge" in result
+    # 3. Now the tool is guaranteed to hit the internal empty-check condition
+    assert "No tax book entries found" in result

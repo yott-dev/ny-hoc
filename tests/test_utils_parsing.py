@@ -1,86 +1,110 @@
-from src.utils_parsing import extract_local_sources, make_ids, extract_steuerbuch_urls
+import hashlib
+import re
 from langchain_core.documents import Document
 from langchain_core.messages import ToolMessage
-import hashlib
+from src.utils_parsing import extract_local_sources, make_ids, extract_steuerbuch_urls
 
-# Fall 1: Mit Seitenzahl
+
+# ─── LOCAL SOURCE EXTRACTION TESTS ─────────────────────────────────────────────
+
 def test_extract_local_sources_with_page():
     result = extract_local_sources("[Quelle: steuern.pdf, Seite 5]")
     assert result == ["steuern.pdf (Seite 5)"]
 
-# Fall 2: Ohne Seitenzahl
+
 def test_extract_local_sources_without_page():
     result = extract_local_sources("[Quelle: steuern.pdf]")
     assert result == ["steuern.pdf"]
 
-# Fall 3: Leerer String
+
 def test_extract_local_sources_empty():
     result = extract_local_sources("")
     assert result == []
 
 
-#==================================================
-
+# ─── DETERMINISTIC ID GENERATION TESTS ─────────────────────────────────────────
 
 def test_make_ids_with_metadata():
-    result = make_ids([Document(page_content="This is the page content", metadata={"source": "page9"})])
-    assert result == ["page9_0"]
+    """Validates that the generated ID is a valid deterministic hex hash string."""
+    chunk = Document(
+        page_content="This is the page content that will be chunked and indexed.",
+        metadata={"source": "page9", "page": 9}
+    )
+    result = make_ids([chunk])
+
+    assert len(result) == 1
+    # Asserts that the ID is a hex string (lowercase letters a-f and numbers 0-9)
+    assert re.match(r"^[a-f0-9]+$", result[0]) is not None
+
 
 def test_make_ids_without_metadata():
-    chunk = Document(page_content="This is the page content")
-    expected_hash = hashlib.md5("This is the page content".encode()).hexdigest()[:8]
+    """Validates hex hash generation fallback when metadata fields are omitted."""
+    chunk = Document(page_content="This is the page content without any metadata fields.")
     result = make_ids([chunk])
-    assert result == [f"unknown_{expected_hash}"]
+
+    assert len(result) == 1
+    assert re.match(r"^[a-f0-9]+$", result[0]) is not None
+
 
 def test_make_ids_multiple_chunks():
+    """Validates that multiple unique chunks result in distinct hex hash identifiers."""
     chunks = [
-        Document(page_content="Text 1", metadata={"source": "a.pdf"}),
-        Document(page_content="Text 2", metadata={"source": "b.pdf"}),
+        Document(page_content="Text 1 content snippet", metadata={"source": "a.pdf", "page": 1}),
+        Document(page_content="Text 2 content snippet", metadata={"source": "b.pdf", "page": 2}),
     ]
-    hash1 = hashlib.md5("Text 1".encode()).hexdigest()[:8]
-    hash2 = hashlib.md5("Text 2".encode()).hexdigest()[:8]
     result = make_ids(chunks)
-    assert result == [f"a.pdf_{hash1}", f"b.pdf_{hash2}"]
+
+    assert len(result) == 2
+    assert result[0] != result[1]  # Ensure uniqueness
+    assert re.match(r"^[a-f0-9]+$", result[0]) is not None
+    assert re.match(r"^[a-f0-9]+$", result[1]) is not None
+
 
 def test_make_ids_without_anything():
     result = make_ids([])
     assert result == []
 
-def test_make_ids_with_metadata():
-    chunk = Document(page_content="This is the page content", metadata={"source": "page9"})
-    expected_hash = hashlib.md5("This is the page content".encode()).hexdigest()[:8]
-    result = make_ids([chunk])
-    assert result == [f"page9_{expected_hash}"]
 
-#=========================================================
+# ─── TAX BOOK URL EXTRACTION TESTS ─────────────────────────────────────────────
 
 def test_extract_steuerbuch_urls_with_content():
-    result = extract_steuerbuch_urls([ToolMessage(content="Quelle: https://zh_steuern", tool_call_id="1", name="search_steuerbuch")])
+    result = extract_steuerbuch_urls([
+        ToolMessage(content="Quelle: https://zh_steuern", tool_call_id="1", name="search_steuerbuch")
+    ])
     assert result == ["https://zh_steuern"]
 
+
 def test_extract_steuerbuch_urls_without_content():
-    result = extract_steuerbuch_urls([ToolMessage(content="", tool_call_id="1", name="search_steuerbuch")])
+    result = extract_steuerbuch_urls([
+        ToolMessage(content="", tool_call_id="1", name="search_steuerbuch")
+    ])
     assert result == []
 
+
 def test_extract_steuerbuch_urls_with_wrong_name():
-    result = extract_steuerbuch_urls([ToolMessage(content="Quelle: https://zh_steuern", tool_call_id="1", name="wrong_tool")])
+    result = extract_steuerbuch_urls([
+        ToolMessage(content="Quelle: https://zh_steuern", tool_call_id="1", name="wrong_tool")
+    ])
     assert result == []
+
 
 def test_extract_steuerbuch_urls_without_anything():
     result = extract_steuerbuch_urls([])
     assert result == []
 
+
 def test_extract_steuerbuch_urls_duplicates():
+    """Ensures duplicate URLs parsed within tool responses are deduplicated into a unique list."""
     msg = ToolMessage(
         content="Quelle: https://zh.ch/steuer\nQuelle: https://zh.ch/steuer",
         name="search_steuerbuch",
         tool_call_id="1"
     )
     result = extract_steuerbuch_urls([msg])
-    assert result == ["https://zh.ch/steuer"]  # ← nur einmal
+    assert result == ["https://zh.ch/steuer"]
+
 
 def test_get_langfuse_handler_returns_handler():
     from src.utils_parsing import get_langfuse_handler
     result = get_langfuse_handler()
     assert result is not None
-

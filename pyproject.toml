@@ -7,6 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "beautifulsoup4>=4.14.3",
     "bs4>=0.0.2",
+    "deptry>=0.25.1",
     "html2text>=2025.4.15",
     "langchain>=1.2.15",
     "langchain-chroma>=1.1.0",

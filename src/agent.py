@@ -73,11 +73,10 @@ def get_agent_response_stream(query: str, vector_store: Chroma, chat_history: li
     def stream_generator():
         for chunk in agent.stream(
                 {"messages": messages},
-                #config={"callbacks": [get_langfuse_handler()]},
+                config={"callbacks": [get_langfuse_handler()]},
                 stream_mode="messages"
         ):
             if isinstance(chunk, tuple):
-                #for logging
                 message, metadata = chunk
                 collected_messages.append(message)
                 if hasattr(message, "content") and message.content and metadata.get("langgraph_node") == 'model':
